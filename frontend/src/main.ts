@@ -13,6 +13,8 @@ import Invitations from './Invitations.vue'
 import InviteLanding from './InviteLanding.vue'
 import Results from './Results.vue'
 import ResultReport from './ResultReport.vue'
+import Audit from './Audit.vue'
+import Retention from './Retention.vue'
 import { loadSession, session } from './session'
 import './style.css'
 import './workflow.css'
@@ -34,6 +36,8 @@ const router = createRouter({
     { path: '/i/:token', component: InviteLanding, meta: { public: true } },
     { path: '/results', component: Results },
     { path: '/results/:id', component: ResultReport },
+    { path: '/audit', component: Audit },
+    { path: '/retention', component: Retention },
     ...['dashboard', 'settings'].map(page => ({
       path: `/${page}`, component: Workspace, props: { page },
     })),
@@ -45,7 +49,7 @@ router.beforeEach(async to => {
   try { await loadSession() } catch { return to.path === '/login' ? true : '/login' }
   if (to.path === '/login') return session.user ? '/dashboard' : true
   if (!session.user) return '/login'
-  if (to.path === '/team' && session.user.role !== 'org_admin') return '/dashboard'
+  if (['/team', '/audit', '/retention'].includes(to.path) && session.user.role !== 'org_admin') return session.user.role === 'assessor' ? '/results' : '/dashboard'
   if (session.user.role === 'assessor' && ['/dashboard', '/questions', '/tests', '/invitations', '/candidates/new', '/vacancies/new'].some(path => to.path === path || to.path.startsWith(path + '/'))) return '/results'
   return true
 })

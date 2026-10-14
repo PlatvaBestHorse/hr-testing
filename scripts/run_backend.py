@@ -15,8 +15,8 @@ if path.exists():
             values[key] = value
 environment = dict(os.environ)
 mode = sys.argv[1] if len(sys.argv) > 1 else 'api'
-if mode not in ('api', 'migrate', 'bootstrap', 'set-password', 'integration'):
-    raise SystemExit('Expected api, migrate, bootstrap, set-password or integration')
+if mode not in ('api', 'migrate', 'bootstrap', 'set-password', 'integration', 'backup'):
+    raise SystemExit('Expected api, migrate, bootstrap, set-password, integration or backup')
 def url(owner=False):
     user = values.get('POSTGRES_USER', 'hr_owner') if owner else 'hr_app'
     password = values.get('POSTGRES_PASSWORD' if owner else 'APP_DB_PASSWORD', '')
@@ -28,14 +28,16 @@ def url(owner=False):
 if mode == 'integration':
     environment['TEST_DATABASE_URL'] = url(True)
     environment['TEST_APP_DATABASE_URL'] = url(False)
-    command = ['go', 'test', '-count=1', '-v', './internal/database', './internal/httpapi']
+    command = ['go', 'test', '-count=1', '-v', './internal/database', './internal/httpapi', './cmd/backup']
 else:
     if 'DATABASE_URL' not in environment:
-        environment['DATABASE_URL'] = url(mode == 'migrate')
+        environment['DATABASE_URL'] = url(mode in ('migrate', 'backup'))
     environment.setdefault('HTTP_ADDR', '127.0.0.1:' + values.get('API_PORT', '8080'))
     environment.setdefault('COOKIE_SECURE', values.get('COOKIE_SECURE', 'false'))
     environment.setdefault('APP_ORIGINS', values.get('APP_ORIGINS', 'http://127.0.0.1:8088,http://localhost:8088,http://127.0.0.1:5173,http://localhost:5173'))
-    command = ['go', 'run', './cmd/' + mode]
+    command = ['go', 'run', './cmd/' + mode] + sys.argv[2:]
+    if mode == 'backup':
+        environment['HR_PROJECT_ROOT'] = str(root)
 # Replace the helper so SIGTERM/SIGINT reach the Go launcher directly.
 os.chdir(root / 'backend')
 os.execvpe(command[0], command, environment)

@@ -31,7 +31,7 @@ async function signOut() { try { await logout() } catch (err) { logoutError.valu
       <RouterLink to="/dashboard" class="brand"><span class="brand-icon"><Layers :size="23" /></span><span>Кадровый<span class="brand-second">тестер<span class="version">2.0</span></span></span></RouterLink>
       <button class="mobile-close icon-button" aria-label="Закрыть меню" @click="menuOpen = false"><X /></button>
       <div class="workspace-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
-      <nav><RouterLink v-for="link in visibleLinks" :key="link.path" :to="link.path" class="nav-link"><component :is="link.icon" :size="20" /><span>{{ link.label }}</span></RouterLink><RouterLink v-if="session.user?.role === 'org_admin'" to="/team" class="nav-link"><UserRoundCog :size="20" />Команда</RouterLink></nav>
+      <nav><RouterLink v-for="link in visibleLinks" :key="link.path" :to="link.path" class="nav-link"><component :is="link.icon" :size="20" /><span>{{ link.label }}</span></RouterLink><template v-if="session.user?.role === 'org_admin'"><RouterLink to="/team" class="nav-link"><UserRoundCog :size="20" />Команда</RouterLink><RouterLink to="/audit" class="nav-link"><ClipboardList :size="20" />Журнал аудита</RouterLink><RouterLink to="/retention" class="nav-link"><Settings :size="20" />Хранение данных</RouterLink></template></nav>
       <div class="sidebar-bottom">
         <div v-if="session.user?.role !== 'assessor'" class="sidebar-note"><span class="note-icon">✦</span><strong>От вопроса к решению</strong><p>Тесты, которые помогают лучше узнать кандидата.</p><RouterLink to="/tests">К тестам <ArrowUpRight :size="16" /></RouterLink></div>
         <RouterLink to="/settings" class="nav-link"><Settings :size="20" />Настройки</RouterLink>

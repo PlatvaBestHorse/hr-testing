@@ -72,7 +72,7 @@ func TestAuthenticatedWorkflow(t *testing.T) {
 			t.Error("local test-owner cleanup requires maintenance privileges")
 			return
 		}
-		for _, table := range []string{"auth_sessions", "audit_events", "candidate_consents", "answer_receipts", "start_receipts", "attempt_answers", "attempt_items", "attempts", "invitations", "vacancy_assessors", "candidates", "vacancies", "test_items", "test_versions", "tests", "question_options", "question_versions", "questions", "categories", "memberships", "organizations"} {
+		for _, table := range []string{"auth_sessions", "retention_previews", "retention_policies", "outbound_messages", "audit_events", "candidate_consents", "answer_receipts", "start_receipts", "attempt_answers", "attempt_items", "attempts", "invitations", "vacancy_assessors", "candidates", "vacancies", "test_items", "test_versions", "tests", "question_options", "question_versions", "questions", "categories", "memberships", "organizations"} {
 			column := "organization_id"
 			if table == "organizations" {
 				column = "id"
@@ -301,6 +301,9 @@ func TestAuthenticatedWorkflow(t *testing.T) {
 	})
 	t.Run("candidate passage workflow", func(t *testing.T) {
 		exerciseAttempts(t, ctx, owner, app, call, admin, assessor, other, orgIDs[0], ids["assessor"])
+	})
+	t.Run("audit and retention workflow", func(t *testing.T) {
+		exerciseGovernance(t, ctx, owner, app, call, admin, recruiter, assessor, other, orgIDs[0], orgIDs[1])
 	})
 	t.Run("login limiter", func(t *testing.T) {
 		_, err := owner.Exec(ctx, `UPDATE auth_rate_limits SET attempts=10 WHERE bucket=$1`, "email:"+hex.EncodeToString(digest(emails["admin-a"])))

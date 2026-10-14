@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Кадровый тестер — HR API
-  version: 0.5.0
-  description: HR API, прохождение, подробные отчёты, фильтры и безопасный экспорт
-    CSV/XLSX.
+  version: 0.6.0
+  description: HR API, прохождение, отчёты, аудит и контролируемые правила хранения
+    данных.
 paths:
   /healthz:
     get:
@@ -2028,6 +2028,363 @@ paths:
           $ref: '#/components/responses/Error422'
         '500':
           $ref: '#/components/responses/Error500'
+  /api/v1/audit:
+    get:
+      operationId: listAudit
+      summary: Журнал действий организации
+      description: Только org_admin своей организации. Даты по МСК, день окончания
+        включён, 50 событий на страницу. actor_id принимает UUID сотрудника или system.
+        ID события передаётся строкой. details выдаются по allowlist; сырые JSON/токены/пароли/контакты/текст
+        причин исключены. actor_name — текущее имя сотрудника. Чтение журнала не добавляет
+        событие.
+      parameters:
+      - name: action
+        in: query
+        schema:
+          type: string
+          pattern: ^[a-z][a-z0-9_.]{0,119}$
+      - name: object_type
+        in: query
+        schema:
+          type: string
+          pattern: ^[a-z][a-z0-9_.]{0,119}$
+      - name: actor_id
+        in: query
+        schema:
+          type: string
+      - name: date_from
+        in: query
+        schema:
+          type: string
+          format: date
+      - name: date_to
+        in: query
+        schema:
+          type: string
+          format: date
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      responses:
+        '200':
+          description: Подтверждено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+  /api/v1/audit/options:
+    get:
+      operationId: auditOptions
+      summary: Доступные фильтры аудита
+      description: Только org_admin своей организации. Действия, объекты и исполнители
+        только из журнала текущей организации.
+      parameters: []
+      responses:
+        '200':
+          description: Подтверждено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditOptions'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+  /api/v1/retention:
+    get:
+      operationId: getRetentionPolicy
+      summary: Правила хранения
+      description: Только org_admin своей организации. По умолчанию enabled=false,
+        оба срока null, revision=0. Пустой срок исключает соответствующий тип данных
+        из очистки.
+      parameters: []
+      responses:
+        '200':
+          description: Подтверждено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionPolicy'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+    patch:
+      operationId: saveRetentionPolicy
+      summary: Сохранить правила хранения
+      description: Только org_admin своей организации. base_revision защищает от устаревшей
+        записи. Для enabled=true нужны хотя бы один срок, цель и утверждённое основание.
+        Правила не запускают автоматическую очистку. Изменение аудируется.
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Подтверждено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionPolicy'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetentionPolicyInput'
+  /api/v1/retention/preview:
+    post:
+      operationId: previewRetention
+      summary: Подготовить список очистки
+      description: 'Только org_admin своей организации. Нужны включённые правила.
+        До 100 карточек и 1000 старых событий, только своей организации; ID списка
+        привязан к автору и версии правил, срок 15 минут. Сохраняются только IDs и
+        cutoff. Последняя активность кандидата: карточка/приглашение/попытка/согласие.
+        Активные попытки, действующие ссылки, retention_hold, erasure_pending и уже
+        очищенные карточки исключаются. Предпросмотр не удаляет данные.'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Подтверждено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionPreview'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptySubmit'
+  /api/v1/retention/previews/{id}/apply:
+    post:
+      operationId: applyRetention
+      summary: Применить подтверждённую очистку
+      description: Только org_admin своей организации. Список должен принадлежать
+        текущему администратору/организации, быть действительным и соответствовать
+        версии включённых правил. Права повторно проверяются после ожидания блокировки.
+        Перед удалением проверяется актуальная пригодность каждой выбранной карточки.
+        ФИО/контакты удаляются, ссылки отзываются, адреса сообщений заменяются redacted,
+        pending/failed сообщения отменяются, согласия удаляются. Баллы и ответы сохраняются.
+        Старый аудит удаляет узкая DB-функция с проверкой действующей админ-сессии.
+        Операция атомарна; повтор ID возвращает прежний результат. Новые после предпросмотра
+        записи не затрагиваются. Действия и итог аудируются.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Подтверждено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionReceipt'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetentionApplyInput'
+  /api/v1/retention/holds:
+    get:
+      operationId: listRetentionHolds
+      summary: Карточки с запретом очистки
+      description: Только org_admin своей организации. Первые 100 защищённых карточек;
+        причина доступна только администратору.
+      parameters: []
+      responses:
+        '200':
+          description: Подтверждено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionHolds'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+  /api/v1/candidates/{id}/retention-hold:
+    put:
+      operationId: setRetentionHold
+      summary: Установить или снять запрет очистки
+      description: Только org_admin своей организации. Для hold=true требуется причина.
+        Причина не копируется в аудит. Очищенные/чужие карточки дают 404.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Подтверждено
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetentionHoldInput'
 components:
   responses:
     Ready:
@@ -2784,6 +3141,13 @@ components:
         created_at:
           type: string
           format: date-time
+        erased_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        retention_hold:
+          type: boolean
       required:
       - id
       - full_name
@@ -2791,6 +3155,8 @@ components:
       - phone
       - status
       - created_at
+      - erased_at
+      - retention_hold
     VacancyInput:
       type: object
       additionalProperties: false
@@ -3541,5 +3907,311 @@ components:
         correct:
           type: integer
           minimum: 0
+    AuditDetails:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        row_count:
+          type: integer
+          minimum: 0
+        policy_revision:
+          type: integer
+          minimum: 0
+        candidates_erased:
+          type: integer
+          minimum: 0
+        candidates_skipped:
+          type: integer
+          minimum: 0
+        audit_events_deleted:
+          type: integer
+          minimum: 0
+        format:
+          type: string
+          enum:
+          - csv
+          - xlsx
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+        hold:
+          type: boolean
+    AuditRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - actor_user_id
+      - actor_name
+      - action
+      - object_type
+      - object_id
+      - occurred_at
+      - details
+      properties:
+        id:
+          type: string
+        actor_user_id:
+          type: string
+        actor_name:
+          type: string
+        action:
+          type: string
+        object_type:
+          type: string
+        object_id:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        details:
+          $ref: '#/components/schemas/AuditDetails'
+    AuditList:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditRecord'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          const: 50
+    AuditOptions:
+      type: object
+      additionalProperties: false
+      required:
+      - actions
+      - object_types
+      - actors
+      properties:
+        actions:
+          type: array
+          items:
+            type: string
+        object_types:
+          type: array
+          items:
+            type: string
+        actors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - id
+            - name
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+    RetentionPolicy:
+      type: object
+      additionalProperties: false
+      required:
+      - enabled
+      - candidate_days
+      - audit_days
+      - purpose
+      - legal_basis
+      - revision
+      - updated_at
+      properties:
+        enabled:
+          type: boolean
+        candidate_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 36500
+        audit_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 36500
+        purpose:
+          type: string
+          maxLength: 2000
+        legal_basis:
+          type: string
+          maxLength: 2000
+        revision:
+          type: integer
+          minimum: 0
+        updated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    RetentionPolicyInput:
+      type: object
+      additionalProperties: false
+      required:
+      - enabled
+      - base_revision
+      properties:
+        enabled:
+          type: boolean
+        candidate_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 36500
+        audit_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 36500
+        purpose:
+          type: string
+          maxLength: 2000
+        legal_basis:
+          type: string
+          maxLength: 2000
+        base_revision:
+          type: integer
+          minimum: 0
+    RetentionCandidate:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - full_name
+      - last_activity_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        last_activity_at:
+          type: string
+          format: date-time
+    RetentionPreview:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - policy_revision
+      - as_of
+      - expires_at
+      - candidates
+      - audit_events
+      - candidate_limit
+      - audit_limit
+      properties:
+        id:
+          type: string
+          format: uuid
+        policy_revision:
+          type: integer
+          minimum: 0
+        as_of:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        candidates:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RetentionCandidate'
+        audit_events:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        candidate_limit:
+          type: integer
+          const: 100
+        audit_limit:
+          type: integer
+          const: 1000
+    RetentionReceipt:
+      type: object
+      additionalProperties: false
+      required:
+      - candidates_erased
+      - candidates_skipped
+      - audit_events_deleted
+      - completed_at
+      properties:
+        candidates_erased:
+          type: integer
+          minimum: 0
+        candidates_skipped:
+          type: integer
+          minimum: 0
+        audit_events_deleted:
+          type: integer
+          minimum: 0
+        completed_at:
+          type: string
+          format: date-time
+    RetentionApplyInput:
+      type: object
+      additionalProperties: false
+      required:
+      - confirmation
+      properties:
+        confirmation:
+          type: string
+          const: УДАЛИТЬ ПО ПРАВИЛАМ
+    RetentionHoldInput:
+      type: object
+      additionalProperties: false
+      required:
+      - hold
+      properties:
+        hold:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 2000
+    RetentionHolds:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - id
+            - full_name
+            - reason
+            properties:
+              id:
+                type: string
+                format: uuid
+              full_name:
+                type: string
+              reason:
+                type: string
 security:
 - sessionCookie: []

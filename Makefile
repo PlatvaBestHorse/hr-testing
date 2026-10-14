@@ -1,4 +1,4 @@
-.PHONY: init install up down db migrate api web test integration runtime-check build check admin admin-dev
+.PHONY: init install up down db migrate api web test integration runtime-check build check admin admin-dev backup backup-verify backup-list backup-prune
 
 init:
 	python3 scripts/init_env.py
@@ -42,8 +42,20 @@ runtime-check:
 	node scripts/check_attempt_runtime.mjs
 
 build:
-	cd backend && go build ./cmd/api ./cmd/migrate ./cmd/bootstrap ./cmd/set-password
+	cd backend && go build ./cmd/api ./cmd/migrate ./cmd/bootstrap ./cmd/set-password ./cmd/backup
 	cd frontend && npm run build
 
 check: test build
 	cd backend && go vet ./...
+
+backup:
+	python3 scripts/run_backend.py backup create
+
+backup-verify:
+	python3 scripts/run_backend.py backup verify $(if $(FILE),--file "$(FILE)",)
+
+backup-list:
+	python3 scripts/run_backend.py backup list
+
+backup-prune:
+	python3 scripts/run_backend.py backup prune --days "$(DAYS)" $(if $(APPLY),--confirm "$(APPLY)",)

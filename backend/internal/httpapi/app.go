@@ -92,6 +92,15 @@ func (a *App) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/results/export", a.protected(nil, a.exportResults))
 	mux.HandleFunc("GET /api/v1/results/{id}", a.protected(nil, a.getResult))
 	mux.HandleFunc("GET /api/v1/results/{id}/export", a.protected(nil, a.exportResult))
+	admin := []string{"org_admin"}
+	mux.HandleFunc("GET /api/v1/audit", a.protected(admin, a.listAudit))
+	mux.HandleFunc("GET /api/v1/audit/options", a.protected(admin, a.auditOptions))
+	mux.HandleFunc("GET /api/v1/retention", a.protected(admin, a.getRetention))
+	mux.HandleFunc("PATCH /api/v1/retention", a.protected(admin, a.saveRetention))
+	mux.HandleFunc("POST /api/v1/retention/preview", a.protected(admin, a.previewRetention))
+	mux.HandleFunc("POST /api/v1/retention/previews/{id}/apply", a.protected(admin, a.applyRetention))
+	mux.HandleFunc("GET /api/v1/retention/holds", a.protected(admin, a.retentionHolds))
+	mux.HandleFunc("PUT /api/v1/candidates/{id}/retention-hold", a.protected(admin, a.setRetentionHold))
 }
 
 func problem(w http.ResponseWriter, status int, code, message string) {
