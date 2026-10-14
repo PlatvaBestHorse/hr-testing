@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""Launch a Go command with local database configuration, without shell expansion."""
+import os
+from pathlib import Path
+import sys
+from urllib.parse import quote
+
+root = Path(__file__).resolve().parent.parent
+values = {}
+path = root / '.env'
+if path.exists():
+    for line in path.read_text().splitlines():
+        if line.strip() and not line.lstrip().startswith('#'):
+            key, value = line.split('=', 1)
+            values[key] = value
+environment = dict(os.environ)
+mode = sys.argv[1] if len(sys.argv) > 1 else 'api'
+if mode not in ('api', 'migrate', 'bootstrap', 'set-password', 'integration'):
+    raise SystemExit('Expected api, migrate, bootstrap, set-password or integration')
+def url(owner=False):
+    user = values.get('POSTGRES_USER', 'hr_owner') if owner else 'hr_app'
+    password = values.get('POSTGRES_PASSWORD' if owner else 'APP_DB_PASSWORD', '')
+    if not password:
+        raise SystemExit('Missing local database credentials. Run make init first, or supply DATABASE_URL.')
+    db = quote(values.get('POSTGRES_DB', 'hr_testing'), safe='')
+    port = values.get('DB_PORT', '5432')
+    return f'postgres://{quote(user, safe="")}:{quote(password, safe="")}@127.0.0.1:{port}/{db}?sslmode=disable'
+if mode == 'integration':
+    environment['TEST_DATABASE_URL'] = url(True)
+    environment['TEST_APP_DATABASE_URL'] = url(False)
+    command = ['go', 'test', '-count=1', '-v', './internal/database', './internal/httpapi']
+else:
+    if 'DATABASE_URL' not in environment:
+        environment['DATABASE_URL'] = url(mode == 'migrate')
+    environment.setdefault('HTTP_ADDR', '127.0.0.1:' + values.get('API_PORT', '8080'))
+    environment.setdefault('COOKIE_SECURE', values.get('COOKIE_SECURE', 'false'))
+    environment.setdefault('APP_ORIGINS', values.get('APP_ORIGINS', 'http://127.0.0.1:8088,http://localhost:8088,http://127.0.0.1:5173,http://localhost:5173'))
+    command = ['go', 'run', './cmd/' + mode]
+# Replace the helper so SIGTERM/SIGINT reach the Go launcher directly.
+os.chdir(root / 'backend')
+os.execvpe(command[0], command, environment)

@@ -1,0 +1,3545 @@
+openapi: 3.1.0
+info:
+  title: Кадровый тестер — HR API
+  version: 0.5.0
+  description: HR API, прохождение, подробные отчёты, фильтры и безопасный экспорт
+    CSV/XLSX.
+paths:
+  /healthz:
+    get:
+      operationId: liveness
+      summary: Проверка HTTP-процесса независимо от базы
+      responses:
+        '200':
+          description: HTTP-процесс работает
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - status
+                properties:
+                  status:
+                    type: string
+                    const: ok
+      security: []
+  /readyz:
+    get:
+      operationId: readiness
+      summary: Проверка базы и наличия последней миграции
+      responses:
+        '200':
+          $ref: '#/components/responses/Ready'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      security: []
+  /api/v1/status:
+    get:
+      operationId: workspaceStatus
+      summary: Минимальный статус подключения для интерфейса
+      responses:
+        '200':
+          $ref: '#/components/responses/Ready'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      security: []
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      summary: Вход сотрудника
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+      security: []
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      summary: Завершение текущей сессии
+      responses:
+        '204':
+          description: Успешно
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Токен текущей сессии из /me
+  /api/v1/me:
+    get:
+      operationId: me
+      summary: Сотрудник, организация, роль и CSRF
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+  /api/v1/categories:
+    get:
+      operationId: listCategories
+      summary: Категории организации
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryList'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+    post:
+      operationId: createCategory
+      summary: Создание категории
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Токен текущей сессии из /me
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryInput'
+  /api/v1/categories/{id}:
+    patch:
+      operationId: updateCategory
+      summary: Изменение категории
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Токен текущей сессии из /me
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryInput'
+    delete:
+      operationId: deleteCategory
+      summary: Удаление неиспользуемой категории
+      responses:
+        '204':
+          description: Успешно
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Токен текущей сессии из /me
+  /api/v1/questions:
+    get:
+      operationId: listQuestions
+      summary: Список последних редакций
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+      parameters:
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+      - name: category_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - draft
+          - active
+          - archived
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1
+    post:
+      operationId: createQuestion
+      summary: Создание черновика вопроса
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionSaved'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Токен текущей сессии из /me
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionInput'
+  /api/v1/questions/{id}:
+    get:
+      operationId: getQuestion
+      summary: Вопрос с вариантами и историей
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Question'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version_no
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+        description: Если не задана — последняя редакция
+  /api/v1/questions/{id}/versions:
+    post:
+      operationId: createQuestionVersion
+      summary: Новая редакция с проверкой base_version_no
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionSaved'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Токен текущей сессии из /me
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionInput'
+  /api/v1/questions/{id}/publish:
+    post:
+      operationId: publishQuestion
+      summary: Публикация текущей сохранённой редакции
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Publication'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Токен текущей сессии из /me
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicationInput'
+  /api/v1/questions/{id}/archive:
+    post:
+      operationId: archiveQuestion
+      summary: Архивирование без удаления истории
+      responses:
+        '204':
+          description: Успешно
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Токен текущей сессии из /me
+  /api/v1/summary:
+    get:
+      operationId: summary
+      summary: Сводные числа только своей организации
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Summary'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Доступно org_admin и recruiter. Организация определяется сессией;
+        assessor не имеет доступа.
+  /api/v1/team:
+    get:
+      operationId: listMembers
+      summary: Сотрудники организации
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberList'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Только org_admin.
+    post:
+      operationId: createMember
+      summary: Создание сотрудника с начальным паролем
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Только org_admin.
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Токен текущей сессии из /me
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberInput'
+  /api/v1/team/{id}:
+    patch:
+      operationId: updateMember
+      summary: Роль, доступ и отзыв сессий сотрудника
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: Только org_admin.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Точный origin интерфейса из APP_ORIGINS
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Токен текущей сессии из /me
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberUpdate'
+  /api/v1/question-versions:
+    get:
+      operationId: availableQuestionVersions
+      summary: Последние опубликованные редакции неархивных вопросов
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionVersionList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+  /api/v1/tests:
+    get:
+      operationId: listTests
+      summary: Последние редакции тестов
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+      - name: published_only
+        in: query
+        schema:
+          type: boolean
+        description: Последняя опубликованная редакция каждого активного теста, даже
+          при новом черновике
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - draft
+          - published
+          - archived
+    post:
+      operationId: createTest
+      summary: Создание черновика теста
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionSaved'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '415':
+          $ref: '#/components/responses/Error415'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestInput'
+  /api/v1/tests/{id}:
+    get:
+      operationId: getTest
+      summary: Тест, веса и история
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestRecord'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version_no
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+  /api/v1/tests/{id}/versions:
+    post:
+      operationId: createTestVersion
+      summary: Новая редакция с optimistic concurrency
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionSaved'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '415':
+          $ref: '#/components/responses/Error415'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestVersionInput'
+  /api/v1/tests/{id}/publish:
+    post:
+      operationId: publishTest
+      summary: Атомарная публикация сохранённой редакции
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestPublication'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '415':
+          $ref: '#/components/responses/Error415'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicationInput'
+  /api/v1/tests/{id}/archive:
+    post:
+      operationId: archiveTest
+      summary: 'Архив: новые приглашения запрещены, выданные ссылки сохранены'
+      responses:
+        '204':
+          description: Успешно
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '415':
+          $ref: '#/components/responses/Error415'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+  /api/v1/candidates:
+    get:
+      operationId: listCandidates
+      summary: Список candidates
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: 'Доступ: org_admin/recruiter; assessor — только назначенные вакансии
+        и связанных кандидатов. Организация определяется только сессией.'
+      parameters:
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+      - name: status
+        in: query
+        schema:
+          type: string
+    post:
+      operationId: createCandidate
+      summary: Создание candidates
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Candidate'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '415':
+          $ref: '#/components/responses/Error415'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CandidateInput'
+  /api/v1/candidates/{id}:
+    get:
+      operationId: getCandidate
+      summary: Карточка candidates
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Candidate'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: 'Доступ: org_admin/recruiter; assessor — только назначенные вакансии
+        и связанных кандидатов. Организация определяется только сессией.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: updateCandidate
+      summary: Обновление полей карточки candidates
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Candidate'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '415':
+          $ref: '#/components/responses/Error415'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CandidateInput'
+  /api/v1/vacancies:
+    get:
+      operationId: listVacancys
+      summary: Список vacancies
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VacancyList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: 'Доступ: org_admin/recruiter; assessor — только назначенные вакансии
+        и связанных кандидатов. Организация определяется только сессией.'
+      parameters:
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 200
+      - name: status
+        in: query
+        schema:
+          type: string
+    post:
+      operationId: createVacancy
+      summary: Создание vacancies
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacancy'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '415':
+          $ref: '#/components/responses/Error415'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VacancyInput'
+  /api/v1/vacancies/{id}:
+    get:
+      operationId: getVacancy
+      summary: Карточка vacancies
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacancy'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: 'Доступ: org_admin/recruiter; assessor — только назначенные вакансии
+        и связанных кандидатов. Организация определяется только сессией.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: updateVacancy
+      summary: Обновление полей карточки vacancies
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacancy'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '415':
+          $ref: '#/components/responses/Error415'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VacancyInput'
+  /api/v1/assessors:
+    get:
+      operationId: listAssessors
+      summary: Активные оценщики своей организации
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+  /api/v1/invitations:
+    get:
+      operationId: listInvitations
+      summary: Приглашения без токенов
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1
+      - name: candidate_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - issued
+          - revoked
+          - expired
+          - completed
+    post:
+      operationId: issueInvitation
+      summary: Выдача ссылки один раз
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationIssued'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '415':
+          $ref: '#/components/responses/Error415'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationInput'
+  /api/v1/invitations/{id}/revoke:
+    post:
+      operationId: revokeInvitation
+      summary: Идемпотентный отзыв ссылки
+      responses:
+        '204':
+          description: Успешно
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '415':
+          $ref: '#/components/responses/Error415'
+      description: 'Доступ: org_admin и recruiter. Организация определяется только
+        сессией.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+  /api/v1/invite/{token}:
+    get:
+      operationId: publicInvitation
+      summary: Минимальная информация о действующем приглашении
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicInvitation'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '500':
+          $ref: '#/components/responses/Error500'
+      security: []
+      description: По хешу токена; без вопросов, ключей ответов, порога, весов и контактов
+        кандидата. Истечение, отзыв или исчерпанный лимит возвращают общий 404.
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 43
+          maxLength: 43
+        description: Не сохранять в логах
+  /api/v1/invite/{token}/start:
+    post:
+      operationId: startAttempt
+      summary: Начало или восстановление попытки
+      security: []
+      description: request_id обеспечивает повторяемость. Активная попытка всегда
+        восстанавливается; без new_attempt=true завершённая не заменяется новой. Срок
+        и лимит проверяются PostgreSQL после блокировки приглашения. Согласие development-passage-v1
+        предназначено для тестового контура.
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 43
+          maxLength: 43
+        description: Секрет ссылки; исключить URL из логов.
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Подтверждено сервером
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateAttempt'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartAttemptInput'
+  /api/v1/invite/{token}/attempt:
+    get:
+      operationId: getAttempt
+      summary: Восстановление последней попытки
+      security: []
+      description: Нет попытки — 404. Возвращает подтверждённые ответы и постоянный
+        порядок, автоматически завершает просроченную. Завершённый результат доступен
+        после срока ссылки до отзыва; архив кандидата/организации блокирует доступ.
+        score присутствует только после завершения при включённом show_candidate_score;
+        финальные items пусты.
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 43
+          maxLength: 43
+        description: Секрет ссылки; исключить URL из логов.
+      responses:
+        '200':
+          description: Подтверждено сервером
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateAttempt'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+  /api/v1/invite/{token}/attempts/{id}/items/{item}/answer:
+    put:
+      operationId: saveAnswer
+      summary: Атомарное сохранение ответа
+      security: []
+      description: expected_revision=0 для первого ответа. Только варианты этого задания;
+        пустой массив очищает ответ. 409 revision_conflict не перезаписывает другую
+        вкладку. Повтор request_id с тем же содержимым возвращает прежнюю квитанцию,
+        даже после завершения; новое содержимое под тем же ID даёт 409. После дедлайна
+        новые ответы не принимаются.
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 43
+          maxLength: 43
+        description: Секрет ссылки; исключить URL из логов.
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: item
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Подтверждено сервером
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerReceipt'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerInput'
+  /api/v1/invite/{token}/attempts/{id}/submit:
+    post:
+      operationId: submitAttempt
+      summary: Идемпотентное завершение и оценивание
+      security: []
+      description: Перед дедлайном submitted, после него expired; учитываются только
+        уже сохранённые ответы. Баллы только за полное совпадение множества; округление
+        процента до двух знаков, passed по округлённому проценту. Повтор не меняет
+        время или результат.
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 43
+          maxLength: 43
+        description: Секрет ссылки; исключить URL из логов.
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Подтверждено сервером
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateAttempt'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptySubmit'
+  /api/v1/results:
+    get:
+      operationId: listResults
+      summary: Прохождения и баллы для HR
+      description: Сессия своей организации; assessor только назначенные вакансии.
+        Поиск буквальный по кандидату/тесту/вакансии, даты начала по МСК, 20 строк
+        на страницу. Выгрузка использует те же фильтры.
+      parameters:
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 500
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - in_progress
+          - submitted
+          - expired
+          - cancelled
+      - name: passed
+        in: query
+        schema:
+          type: string
+          enum:
+          - 'true'
+          - 'false'
+      - name: date_from
+        in: query
+        schema:
+          type: string
+          format: date
+        description: 'По времени начала: календарные дни МСК (+03:00); обе границы
+          включены.'
+      - name: date_to
+        in: query
+        schema:
+          type: string
+          format: date
+        description: 'По времени начала: календарные дни МСК (+03:00); обе границы
+          включены.'
+      - name: candidate_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: test_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: vacancy_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Список
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '500':
+          $ref: '#/components/responses/Error500'
+  /api/v1/results/{id}:
+    get:
+      operationId: getResultReport
+      summary: Подробный отчёт завершённой попытки
+      description: 'Проверяются организация и назначение оценщика. Активная/отменённая
+        попытка — 409 report_pending. Только HR: правильные варианты, собственные
+        ответы кандидата, пояснения, баллы и категории. categories_frozen=false у
+        старых заданий без снимка категории, их категория берётся из текущего банка.
+        Суммы/проценты баллов рассчитываются в сотых. Просмотр записывается в аудит.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Отчёт
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptReport'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '500':
+          $ref: '#/components/responses/Error500'
+  /api/v1/results/export:
+    get:
+      operationId: exportResults
+      summary: Экспорт выбранного диапазона результатов
+      description: Все страницы с теми же фильтрами и правами, максимум 10 000 строк;
+        больше — 422 export_limit без частичного файла. Незавершённые попытки экспортируются
+        без баллов. UTF-8 BOM, CSV с разделителем ; и десятичной запятой; текст защищён
+        от формул. XLSX содержит literal inline strings, числовые баллы и ни одной
+        формулы. Content-Disposition attachment, no-store. Успешная подготовка/выдача
+        записывается в аудит.
+      parameters:
+      - name: search
+        in: query
+        schema:
+          type: string
+          maxLength: 500
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - in_progress
+          - submitted
+          - expired
+          - cancelled
+      - name: passed
+        in: query
+        schema:
+          type: string
+          enum:
+          - 'true'
+          - 'false'
+      - name: date_from
+        in: query
+        schema:
+          type: string
+          format: date
+        description: 'По времени начала: календарные дни МСК (+03:00); обе границы
+          включены.'
+      - name: date_to
+        in: query
+        schema:
+          type: string
+          format: date
+        description: 'По времени начала: календарные дни МСК (+03:00); обе границы
+          включены.'
+      - name: candidate_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: test_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: vacancy_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: format
+        in: query
+        schema:
+          type: string
+          enum:
+          - csv
+          - xlsx
+          default: csv
+      responses:
+        '200':
+          description: Файл
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+  /api/v1/results/{id}/export:
+    get:
+      operationId: exportResultReport
+      summary: Экспорт подробного отчёта
+      description: CSV содержит строки ответов с итогом; XLSX — листы Результаты,
+        Категории, Ответы. Только завершённые попытки. UTF-8 BOM, CSV с разделителем
+        ; и десятичной запятой; текст защищён от формул. XLSX содержит literal inline
+        strings, числовые баллы и ни одной формулы. Content-Disposition attachment,
+        no-store. Успешная подготовка/выдача записывается в аудит.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: format
+        in: query
+        schema:
+          type: string
+          enum:
+          - csv
+          - xlsx
+          default: csv
+      responses:
+        '200':
+          description: Файл
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+components:
+  responses:
+    Ready:
+      description: База доступна, миграции применены
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+          description: Идентификатор запроса
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+            - status
+            properties:
+              status:
+                type: string
+                const: ready
+    Unavailable:
+      description: База недоступна или миграции не завершены; сведения подключения
+        не раскрываются
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+            - status
+            - code
+            properties:
+              status:
+                type: string
+                const: unavailable
+              code:
+                type: string
+                const: database_unavailable
+    Error400:
+      description: Некорректный JSON, поля или фильтр
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error401:
+      description: Требуется вход или сессия завершена
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error403:
+      description: Недостаточно прав, неверный Origin или CSRF
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error404:
+      description: Объект не найден в своей организации
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error409:
+      description: Конфликт, объект используется или версия устарела
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error415:
+      description: Ожидается application/json
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error422:
+      description: Ошибка проверки полей
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error429:
+      description: 'Лимит входа; Retry-After: 900'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error500:
+      description: Ошибка сервера без раскрытия сведений БД
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: hr_session
+      description: HttpOnly cookie. Изменяющие запросы также требуют Origin и X-CSRF-Token
+        из /me.
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: string
+      required:
+      - code
+      - message
+    Me:
+      type: object
+      additionalProperties: false
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        organization_name:
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum:
+          - org_admin
+          - recruiter
+          - assessor
+        csrf_token:
+          type: string
+          minLength: 64
+          maxLength: 64
+      required:
+      - user_id
+      - organization_id
+      - organization_name
+      - display_name
+      - email
+      - role
+      - csrf_token
+    Login:
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          maxLength: 1024
+          writeOnly: true
+          description: Максимум 1024 UTF-8 байта
+        organization_slug:
+          type: string
+          maxLength: 80
+      required:
+      - email
+      - password
+    Category:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+      required:
+      - id
+      - name
+      - description
+    CategoryInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 2000
+      required:
+      - name
+    Option:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        is_correct:
+          type: boolean
+      required:
+      - label
+      - is_correct
+    QuestionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        category_id:
+          type: string
+          description: UUID своей категории или пустая строка
+        difficulty:
+          type: integer
+          minimum: 1
+          maximum: 5
+        type:
+          type: string
+          enum:
+          - single_choice
+          - multiple_choice
+          - verbal_tfu
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        passage:
+          type: string
+          maxLength: 20000
+        explanation:
+          type: string
+          maxLength: 10000
+        options:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/Option'
+        base_version_no:
+          type: integer
+          minimum: 0
+          description: Для новой редакции обязательный актуальный номер предыдущей
+            версии
+      required:
+      - difficulty
+      - type
+      - body
+      - options
+    VersionInfo:
+      type: object
+      additionalProperties: false
+      properties:
+        version_no:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+          - draft
+          - published
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - version_no
+      - status
+      - created_at
+    QuestionSaved:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        version_no:
+          type: integer
+          minimum: 1
+      required:
+      - id
+      - version_no
+    Publication:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        version_no:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+          - published
+      required:
+      - id
+      - version_no
+      - status
+    PublicationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        base_version_no:
+          type: integer
+          minimum: 1
+      required:
+      - base_version_no
+    Member:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          type: string
+          enum:
+          - org_admin
+          - recruiter
+          - assessor
+        status:
+          type: string
+          enum:
+          - active
+          - invited
+          - disabled
+      required:
+      - id
+      - email
+      - display_name
+      - role
+      - status
+    MemberInput:
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 250
+        role:
+          type: string
+          enum:
+          - org_admin
+          - recruiter
+          - assessor
+        password:
+          type: string
+          minLength: 12
+          maxLength: 1024
+          writeOnly: true
+          description: Минимум 12 символов, максимум 1024 UTF-8 байта
+      required:
+      - email
+      - display_name
+      - role
+      - password
+    MemberUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+          enum:
+          - org_admin
+          - recruiter
+          - assessor
+        status:
+          type: string
+          enum:
+          - active
+          - disabled
+      required:
+      - role
+      - status
+    Summary:
+      type: object
+      additionalProperties: false
+      properties:
+        questions:
+          type: integer
+          minimum: 0
+        tests:
+          type: integer
+          minimum: 0
+        candidates:
+          type: integer
+          minimum: 0
+        attempts:
+          type: integer
+          minimum: 0
+      required:
+      - questions
+      - tests
+      - candidates
+      - attempts
+    Question:
+      type: object
+      additionalProperties: false
+      properties:
+        category_id:
+          type: string
+          description: UUID своей категории или пустая строка
+        difficulty:
+          type: integer
+          minimum: 1
+          maximum: 5
+        type:
+          type: string
+          enum:
+          - single_choice
+          - multiple_choice
+          - verbal_tfu
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        passage:
+          type: string
+          maxLength: 20000
+        explanation:
+          type: string
+          maxLength: 10000
+        options:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/Option'
+        id:
+          type: string
+          format: uuid
+        category_name:
+          type: string
+        status:
+          type: string
+          enum:
+          - draft
+          - active
+          - archived
+        version_id:
+          type: string
+          format: uuid
+        version_no:
+          type: integer
+          minimum: 1
+        latest_version_no:
+          type: integer
+          minimum: 1
+        version_status:
+          type: string
+          enum:
+          - draft
+          - published
+        created_at:
+          type: string
+          format: date-time
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/VersionInfo'
+      required:
+      - category_id
+      - difficulty
+      - type
+      - body
+      - passage
+      - explanation
+      - options
+      - id
+      - category_name
+      - status
+      - version_id
+      - version_no
+      - latest_version_no
+      - version_status
+      - created_at
+      - versions
+    QuestionList:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Question'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          const: 20
+      required:
+      - items
+      - total
+      - page
+      - page_size
+    CategoryList:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+      required:
+      - items
+    MemberList:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+      required:
+      - items
+    TestItemInput:
+      type: object
+      additionalProperties: false
+      properties:
+        question_version_id:
+          type: string
+          format: uuid
+        points:
+          type: string
+          pattern: ^[0-9]{1,6}(\.[0-9]{1,2})?$
+          description: Точная десятичная строка; максимум 2 знака после точки
+      required:
+      - question_version_id
+      - points
+    TestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 250
+        description:
+          type: string
+          maxLength: 10000
+        duration_seconds:
+          type: integer
+          minimum: 60
+          maximum: 28800
+        pass_percent:
+          type: string
+          pattern: ^[0-9]{1,6}(\.[0-9]{1,2})?$
+          description: Точная десятичная строка; максимум 2 знака после точки
+        shuffle_questions:
+          type: boolean
+        shuffle_options:
+          type: boolean
+        show_candidate_score:
+          type: boolean
+        base_version_no:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/TestItemInput'
+      required:
+      - title
+      - duration_seconds
+      - pass_percent
+      - items
+    TestVersionInput:
+      allOf:
+      - $ref: '#/components/schemas/TestInput'
+      - type: object
+        required:
+        - base_version_no
+        properties:
+          base_version_no:
+            type: integer
+            minimum: 1
+    TestItem:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        question_id:
+          type: string
+          format: uuid
+        question_version_id:
+          type: string
+          format: uuid
+        question_version_no:
+          type: integer
+          minimum: 1
+        body:
+          type: string
+        type:
+          type: string
+          enum:
+          - single_choice
+          - multiple_choice
+          - verbal_tfu
+        position:
+          type: integer
+        points:
+          type: string
+      required:
+      - question_id
+      - question_version_id
+      - question_version_no
+      - body
+      - type
+      - position
+      - points
+    TestRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - active
+          - archived
+        version_id:
+          type: string
+          format: uuid
+        version_no:
+          type: integer
+          minimum: 1
+        latest_version_no:
+          type: integer
+          minimum: 1
+        version_status:
+          type: string
+          enum:
+          - draft
+          - published
+          - archived
+        title:
+          type: string
+        description:
+          type: string
+        duration_seconds:
+          type: integer
+        pass_percent:
+          type: string
+        shuffle_questions:
+          type: boolean
+        shuffle_options:
+          type: boolean
+        show_candidate_score:
+          type: boolean
+        question_count:
+          type: integer
+          minimum: 0
+        max_points:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestItem'
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/VersionInfo'
+      required:
+      - id
+      - status
+      - version_id
+      - version_no
+      - title
+      - items
+    TestPublication:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        version_id:
+          type: string
+          format: uuid
+        version_no:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+          - published
+      required:
+      - id
+      - version_id
+      - version_no
+      - status
+    CandidateInput:
+      type: object
+      additionalProperties: false
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 250
+        email:
+          type: string
+          maxLength: 320
+          description: Email или пустая строка
+        phone:
+          type: string
+          maxLength: 40
+        status:
+          type: string
+          enum:
+          - active
+          - archived
+      required:
+      - full_name
+    Candidate:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - full_name
+      - email
+      - phone
+      - status
+      - created_at
+    VacancyInput:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 250
+        department:
+          type: string
+          maxLength: 200
+        status:
+          type: string
+          enum:
+          - open
+          - closed
+          - archived
+        assessor_ids:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+      required:
+      - title
+    Vacancy:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        department:
+          type: string
+        status:
+          type: string
+        assessor_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+      - id
+      - title
+      - department
+      - status
+      - assessor_ids
+    InvitationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        candidate_id:
+          type: string
+          format: uuid
+        test_version_id:
+          type: string
+          format: uuid
+        vacancy_id:
+          type: string
+          description: UUID открытой вакансии или пустая строка
+        max_attempts:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 1
+        expires_at:
+          type: string
+          format: date-time
+          description: Будущее время; максимум 365 дней
+      required:
+      - candidate_id
+      - test_version_id
+      - expires_at
+    Invitation:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        candidate_id:
+          type: string
+          format: uuid
+        candidate_name:
+          type: string
+        test_version_id:
+          type: string
+          format: uuid
+        test_title:
+          type: string
+        test_version_no:
+          type: integer
+        vacancy_id:
+          type: string
+        vacancy_title:
+          type: string
+        status:
+          type: string
+          enum:
+          - issued
+          - revoked
+          - expired
+          - completed
+        max_attempts:
+          type: integer
+        used_attempts:
+          type: integer
+        expires_at:
+          type: string
+          format: date-time
+        issued_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - candidate_id
+      - test_version_id
+      - status
+      - expires_at
+      - issued_at
+    InvitationIssued:
+      type: object
+      additionalProperties: false
+      properties:
+        invitation:
+          $ref: '#/components/schemas/Invitation'
+        path:
+          type: string
+          writeOnly: false
+          description: Секретный путь /i/<256-битный токен>; возвращается только при
+            выдаче. Не логировать.
+      required:
+      - invitation
+      - path
+    PublicInvitation:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        organization_name:
+          type: string
+        duration_seconds:
+          type: integer
+        question_count:
+          type: integer
+        max_attempts:
+          type: integer
+        attempts_remaining:
+          type: integer
+          minimum: 0
+        can_resume:
+          type: boolean
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - title
+      - description
+      - organization_name
+      - duration_seconds
+      - question_count
+      - max_attempts
+      - attempts_remaining
+      - can_resume
+      - expires_at
+    TestList:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestRecord'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          const: 20
+      required:
+      - items
+      - total
+      - page
+      - page_size
+    CandidateList:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Candidate'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          const: 20
+      required:
+      - items
+      - total
+      - page
+      - page_size
+    VacancyList:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vacancy'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          const: 20
+      required:
+      - items
+      - total
+      - page
+      - page_size
+    InvitationList:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          const: 20
+      required:
+      - items
+      - total
+      - page
+      - page_size
+    QuestionVersionList:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestItem'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          const: 20
+      required:
+      - items
+      - total
+      - page
+      - page_size
+    CandidateUpdate:
+      allOf:
+      - $ref: '#/components/schemas/CandidateInput'
+      - type: object
+        required:
+        - status
+    VacancyUpdate:
+      allOf:
+      - $ref: '#/components/schemas/VacancyInput'
+      - type: object
+        required:
+        - status
+    CandidateOption:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - label
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+    CandidateItem:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - position
+      - type
+      - body
+      - passage
+      - options
+      - selected_option_ids
+      - revision
+      properties:
+        id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+          minimum: 1
+        type:
+          type: string
+          enum:
+          - single_choice
+          - verbal_tfu
+          - multiple_choice
+        body:
+          type: string
+        passage:
+          type: string
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/CandidateOption'
+        selected_option_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        revision:
+          type: integer
+          minimum: 0
+    CandidateScore:
+      type: object
+      additionalProperties: false
+      required:
+      - percent
+      - passed
+      properties:
+        percent:
+          type: string
+          pattern: ^\d+\.\d{2}$
+        passed:
+          type: boolean
+    CandidateAttempt:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - status
+      - title
+      - started_at
+      - deadline_at
+      - server_now
+      - attempts_remaining
+      - items
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - in_progress
+          - submitted
+          - expired
+          - cancelled
+        title:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        deadline_at:
+          type: string
+          format: date-time
+        server_now:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        attempts_remaining:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CandidateItem'
+        score:
+          $ref: '#/components/schemas/CandidateScore'
+    StartAttemptInput:
+      type: object
+      additionalProperties: false
+      required:
+      - request_id
+      - consent
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        consent:
+          type: boolean
+          const: true
+        new_attempt:
+          type: boolean
+          default: false
+    AnswerInput:
+      type: object
+      additionalProperties: false
+      required:
+      - request_id
+      - expected_revision
+      - selected_option_ids
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        expected_revision:
+          type: integer
+          minimum: 0
+        selected_option_ids:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+    AnswerReceipt:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - selected_option_ids
+      - saved_at
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+        selected_option_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        saved_at:
+          type: string
+          format: date-time
+    ResultRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - candidate_name
+      - test_title
+      - vacancy_title
+      - status
+      - score_points
+      - max_points
+      - score_percent
+      - passed
+      - started_at
+      - finished_at
+      - test_version_no
+      - attempt_no
+      properties:
+        id:
+          type: string
+          format: uuid
+        candidate_name:
+          type: string
+        test_title:
+          type: string
+        vacancy_title:
+          type: string
+        status:
+          type: string
+          enum:
+          - in_progress
+          - submitted
+          - expired
+          - cancelled
+        score_points:
+          type:
+          - string
+          - 'null'
+        max_points:
+          type:
+          - string
+          - 'null'
+        score_percent:
+          type:
+          - string
+          - 'null'
+        passed:
+          type:
+          - boolean
+          - 'null'
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        test_version_no:
+          type: integer
+          minimum: 1
+        attempt_no:
+          type: integer
+          minimum: 1
+    ResultList:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResultRecord'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+          const: 20
+    EmptySubmit:
+      type: object
+      additionalProperties: false
+      required: []
+      properties: {}
+    ReportOption:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - label
+      - selected
+      - is_correct
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        selected:
+          type: boolean
+        is_correct:
+          type: boolean
+    ReportItem:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - position
+      - type
+      - body
+      - passage
+      - explanation
+      - question_version_no
+      - category_id
+      - category_name
+      - category_frozen
+      - options
+      - correct
+      - answered
+      - score_points
+      - max_points
+      properties:
+        id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+          minimum: 1
+        type:
+          type: string
+          enum:
+          - single_choice
+          - multiple_choice
+          - verbal_tfu
+        body:
+          type: string
+        passage:
+          type: string
+        explanation:
+          type: string
+        question_version_no:
+          type: integer
+          minimum: 1
+        category_id:
+          type: string
+        category_name:
+          type: string
+        category_frozen:
+          type: boolean
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportOption'
+        correct:
+          type: boolean
+        answered:
+          type: boolean
+        score_points:
+          type: string
+        max_points:
+          type: string
+    ReportCategory:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - questions
+      - answered
+      - correct
+      - score_points
+      - max_points
+      - score_percent
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        questions:
+          type: integer
+          minimum: 0
+        answered:
+          type: integer
+          minimum: 0
+        correct:
+          type: integer
+          minimum: 0
+        score_points:
+          type: string
+        max_points:
+          type: string
+        score_percent:
+          type: string
+    AttemptReport:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - candidate_name
+      - test_title
+      - vacancy_title
+      - status
+      - score_points
+      - max_points
+      - score_percent
+      - passed
+      - started_at
+      - finished_at
+      - test_version_no
+      - attempt_no
+      - deadline_at
+      - pass_percent
+      - categories_frozen
+      - questions
+      - categories
+      - answered
+      - correct
+      properties:
+        id:
+          type: string
+          format: uuid
+        candidate_name:
+          type: string
+        test_title:
+          type: string
+        vacancy_title:
+          type: string
+        status:
+          type: string
+          enum:
+          - in_progress
+          - submitted
+          - expired
+          - cancelled
+        score_points:
+          type:
+          - string
+          - 'null'
+        max_points:
+          type:
+          - string
+          - 'null'
+        score_percent:
+          type:
+          - string
+          - 'null'
+        passed:
+          type:
+          - boolean
+          - 'null'
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        test_version_no:
+          type: integer
+          minimum: 1
+        attempt_no:
+          type: integer
+          minimum: 1
+        deadline_at:
+          type: string
+          format: date-time
+        pass_percent:
+          type: string
+        categories_frozen:
+          type: boolean
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportItem'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportCategory'
+        answered:
+          type: integer
+          minimum: 0
+        correct:
+          type: integer
+          minimum: 0
+security:
+- sessionCookie: []
