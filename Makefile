@@ -1,4 +1,4 @@
-.PHONY: init install up down db migrate api web test integration runtime-check build check admin admin-dev backup backup-verify backup-list backup-prune
+.PHONY: init install up down db migrate api web test integration runtime-check build check admin admin-dev admin-docker production-test production-smoke backup backup-verify backup-list backup-prune
 
 init:
 	python3 scripts/init_env.py
@@ -27,6 +27,15 @@ admin:
 
 admin-dev:
 	python3 scripts/create_admin.py --dev
+
+admin-docker:
+	python3 scripts/create_admin.py --docker
+
+production-test:
+	python3 -m unittest discover -s scripts/tests -p 'test_production.py'
+
+production-smoke:
+	python3 scripts/check_production.py
 
 web:
 	cd frontend && npm run dev

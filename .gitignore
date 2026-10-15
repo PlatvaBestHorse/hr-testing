@@ -12,4 +12,6 @@ frontend/playwright-report/
 frontend/test-results/
 backend/bin/
 *.log
+__pycache__/
+*.pyc
 .DS_Store

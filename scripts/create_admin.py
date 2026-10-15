@@ -34,7 +34,9 @@ else:
         raise SystemExit('Пароли не совпадают. Аккаунт не создан.')
 mode = 'set-password' if reset else 'bootstrap'
 input_data = {'email': data['email'], 'password': data['password']} if reset else data
-result = subprocess.run([sys.executable, str(root / 'scripts/run_backend.py'), mode], input=json.dumps(input_data), text=True, cwd=root)
+command = (['docker', 'compose', 'run', '--build', '--rm', '--no-deps', '-T', 'admin', '/app/' + mode]
+           if '--docker' in sys.argv else [sys.executable, str(root / 'scripts/run_backend.py'), mode])
+result = subprocess.run(command, input=json.dumps(input_data), text=True, cwd=root)
 if result.returncode:
     raise SystemExit(result.returncode)
 if dev:

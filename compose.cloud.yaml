@@ -1,6 +1,16 @@
 # Linux cloud runner: build containers use host DNS and the provided egress proxy.
 # Proxy build arguments are Docker's predefined arguments, excluded from history.
 services:
+  admin:
+    build:
+      network: host
+      secrets: [cloud_ca]
+      extra_hosts:
+        - "${HR_BUILD_PROXY_HOST:-proxy}=${HR_BUILD_PROXY_IP:?Source scripts/cloud_env.sh first}"
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
   api:
     build:
       network: host

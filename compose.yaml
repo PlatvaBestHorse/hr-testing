@@ -30,6 +30,15 @@ services:
         condition: service_healthy
     restart: "no"
 
+  admin:
+    profiles: [tools]
+    build:
+      context: ./backend
+      target: operator
+    environment:
+      DATABASE_URL: postgres://hr_app:${APP_DB_PASSWORD}@db:5432/${POSTGRES_DB:-hr_testing}?sslmode=disable
+    restart: "no"
+
   api:
     build: ./backend
     # Local development: match the host user for the private test mailbox.

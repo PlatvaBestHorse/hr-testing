@@ -1,0 +1,125 @@
+# Standalone manifest. Never merge with compose.yaml (development ports/data).
+name: ${HR_PROJECT:?Use scripts/production.py}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+x-locked: &locked
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging: *logging
+
+services:
+  db:
+    image: postgres:17-bookworm
+    logging: *logging
+    environment:
+      POSTGRES_DB: hr_testing
+      POSTGRES_USER: hr_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?}
+    volumes:
+      - type: bind
+        source: ${HR_STATE_DIR:?}/postgres
+        target: /var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sh:/docker-entrypoint-initdb.d/01-app-role.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U hr_owner -d hr_testing"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  api:
+    <<: *locked
+    image: ${HR_IMAGE_PREFIX:?}-api:${HR_RELEASE_TAG:?}
+    build:
+      context: ./backend
+      target: runtime
+    environment:
+      HTTP_ADDR: 0.0.0.0:8080
+      COOKIE_SECURE: "true"
+      APP_ORIGINS: ${HR_PUBLIC_ORIGIN:?}
+      APP_PUBLIC_URL: ${HR_PUBLIC_ORIGIN:?}
+      DATABASE_URL: postgres://hr_app:${APP_DB_PASSWORD}@db:5432/hr_testing?sslmode=disable
+      AUTH_ENCRYPTION_KEY: ${AUTH_ENCRYPTION_KEY:?}
+      AUTH_MAIL_MODE: disabled
+      TRUSTED_PROXY_CIDRS: ${HR_WEB_INTERNAL_IP:?}/32
+      CANDIDATE_IP_LIMIT_PER_MINUTE: "600"
+    healthcheck:
+      test: [CMD, wget, --spider, -q, http://127.0.0.1:8080/readyz]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    <<: *locked
+    profiles: [tools]
+    image: ${HR_IMAGE_PREFIX}-api:${HR_RELEASE_TAG}
+    command: [/app/migrate]
+    environment:
+      DATABASE_URL: postgres://hr_owner:${POSTGRES_PASSWORD}@db:5432/hr_testing?sslmode=disable
+
+  admin:
+    <<: *locked
+    profiles: [tools]
+    image: ${HR_IMAGE_PREFIX}-operator:${HR_RELEASE_TAG}
+    build:
+      context: ./backend
+      target: operator
+    environment:
+      DATABASE_URL: postgres://hr_app:${APP_DB_PASSWORD}@db:5432/hr_testing?sslmode=disable
+
+  maintenance:
+    <<: *locked
+    profiles: [tools]
+    image: ${HR_IMAGE_PREFIX}-operator:${HR_RELEASE_TAG}
+    command: [/app/org-resume]
+    environment:
+      DATABASE_URL: postgres://hr_owner:${POSTGRES_PASSWORD}@db:5432/hr_testing?sslmode=disable
+
+  web:
+    logging: *logging
+    image: ${HR_IMAGE_PREFIX}-web:${HR_RELEASE_TAG}
+    build: ./frontend
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/etc/nginx/conf.d, /var/cache/nginx, /var/run, /tmp]
+    environment:
+      HR_PUBLIC_HOST: ${HR_PUBLIC_HOST:?}
+      HR_PUBLIC_ORIGIN: ${HR_PUBLIC_ORIGIN:?}
+      NGINX_ENVSUBST_FILTER: ^HR_PUBLIC_(HOST|ORIGIN)$$
+    volumes:
+      - ./infrastructure/production/nginx.conf.template:/etc/nginx/templates/production.conf.template:ro
+      - type: bind
+        source: ${HR_TLS_CERT:?}
+        target: /etc/nginx/tls/fullchain.pem
+        read_only: true
+      - type: bind
+        source: ${HR_TLS_KEY:?}
+        target: /etc/nginx/tls/privkey.pem
+        read_only: true
+    ports:
+      - "${HR_BIND_ADDRESS:?}:${HR_HTTP_PORT:?}:80"
+      - "${HR_BIND_ADDRESS}:${HR_HTTPS_PORT:?}:443"
+    networks:
+      default:
+        ipv4_address: ${HR_WEB_INTERNAL_IP}
+    healthcheck:
+      test: [CMD, wget, --spider, -q, http://127.0.0.1/healthz]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${HR_DOCKER_SUBNET:?}
