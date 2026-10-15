@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 .local/
+.validation/
 .backups/
 .mailbox/
 .imports/

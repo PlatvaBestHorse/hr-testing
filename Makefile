@@ -1,4 +1,4 @@
-.PHONY: init install up down db migrate api web test integration runtime-check build check admin admin-dev admin-docker production-test production-smoke backup backup-verify backup-ledger backup-list backup-prune
+.PHONY: init install up down db migrate api web test integration runtime-check resilience-check build check admin admin-dev admin-docker production-test production-smoke backup backup-verify backup-ledger backup-list backup-prune
 
 init:
 	python3 scripts/init_env.py
@@ -36,6 +36,9 @@ production-test:
 
 production-smoke:
 	python3 scripts/check_production.py
+
+resilience-check:
+	python3 scripts/check_resilience.py
 
 web:
 	cd frontend && npm run dev

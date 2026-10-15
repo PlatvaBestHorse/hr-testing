@@ -35,7 +35,7 @@ class LocalTLS(HTTPSConnection):
         self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
 
 
-def main():
+def main(exercise=None):
     os.umask(0o077)
     root = Path(tempfile.mkdtemp(prefix='hr-production-smoke-'))
     project = 'hr-prod-test-' + secrets.token_hex(4)
@@ -139,6 +139,8 @@ def main():
         role = p.compose(config, 'exec', '-T', 'db', 'psql', '-U', 'hr_owner', '-d', 'hr_testing', '-Atc',
                          "SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname='hr_app'", capture=True)
         assert role.stdout.strip() == 'f'
+        if exercise is not None:
+            exercise(config, context, request)
         # Production backup image uses native PG17 clients with no Docker socket
         # and restores into fresh DBs, preserving the live API/session unchanged.
         replica = root / 'replica'
