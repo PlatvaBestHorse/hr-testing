@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Кадровый тестер — HR API
-  version: 0.9.0
+  version: 0.10.0
   description: HR API, прохождение, отчёты, аудит и контролируемые правила хранения
     данных.
 paths:
@@ -1550,9 +1550,22 @@ paths:
           $ref: '#/components/responses/Error404'
         '500':
           $ref: '#/components/responses/Error500'
+        '429':
+          description: 'Лимит клиентского IP: по умолчанию 600 запросов в минуту в API; Nginx дополнительно
+            ограничивает всплески 20 запросами/с с burst 100. За NAT IP общий.'
+          headers:
+            Retry-After:
+              description: Повторить не ранее чем через указанное число секунд
+              schema:
+                type: integer
+                const: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
       security: []
-      description: По хешу токена; без вопросов, ключей ответов, порога, весов и контактов
-        кандидата. Истечение, отзыв или исчерпанный лимит возвращают общий 404.
+      description: По хешу токена; без вопросов, ключей ответов, порога, весов и контактов кандидата. Истечение,
+        отзыв или исчерпанный лимит возвращают общий 404.
       parameters:
       - name: token
         in: path
@@ -1567,10 +1580,9 @@ paths:
       operationId: startAttempt
       summary: Начало или восстановление попытки
       security: []
-      description: request_id обеспечивает повторяемость. Активная попытка всегда
-        восстанавливается; без new_attempt=true завершённая не заменяется новой. Срок
-        и лимит проверяются PostgreSQL после блокировки приглашения. Согласие development-passage-v1
-        предназначено для тестового контура.
+      description: request_id обеспечивает повторяемость. Активная попытка всегда восстанавливается; без
+        new_attempt=true завершённая не заменяется новой. Срок и лимит проверяются PostgreSQL после блокировки
+        приглашения. Согласие development-passage-v1 предназначено для тестового контура.
       parameters:
       - name: token
         in: path
@@ -1606,6 +1618,19 @@ paths:
           $ref: '#/components/responses/Error422'
         '500':
           $ref: '#/components/responses/Error500'
+        '429':
+          description: 'Лимит клиентского IP: по умолчанию 600 запросов в минуту в API; Nginx дополнительно
+            ограничивает всплески 20 запросами/с с burst 100. За NAT IP общий.'
+          headers:
+            Retry-After:
+              description: Повторить не ранее чем через указанное число секунд
+              schema:
+                type: integer
+                const: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
       requestBody:
         required: true
         content:
@@ -1617,10 +1642,9 @@ paths:
       operationId: getAttempt
       summary: Восстановление последней попытки
       security: []
-      description: Нет попытки — 404. Возвращает подтверждённые ответы и постоянный
-        порядок, автоматически завершает просроченную. Завершённый результат доступен
-        после срока ссылки до отзыва; архив кандидата/организации блокирует доступ.
-        score присутствует только после завершения при включённом show_candidate_score;
+      description: Нет попытки — 404. Возвращает подтверждённые ответы и постоянный порядок, автоматически
+        завершает просроченную. Завершённый результат доступен после срока ссылки до отзыва; архив кандидата/организации
+        блокирует доступ. score присутствует только после завершения при включённом show_candidate_score;
         финальные items пусты.
       parameters:
       - name: token
@@ -1652,16 +1676,28 @@ paths:
           $ref: '#/components/responses/Error422'
         '500':
           $ref: '#/components/responses/Error500'
+        '429':
+          description: 'Лимит клиентского IP: по умолчанию 600 запросов в минуту в API; Nginx дополнительно
+            ограничивает всплески 20 запросами/с с burst 100. За NAT IP общий.'
+          headers:
+            Retry-After:
+              description: Повторить не ранее чем через указанное число секунд
+              schema:
+                type: integer
+                const: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/invite/{token}/attempts/{id}/items/{item}/answer:
     put:
       operationId: saveAnswer
       summary: Атомарное сохранение ответа
       security: []
-      description: expected_revision=0 для первого ответа. Только варианты этого задания;
-        пустой массив очищает ответ. 409 revision_conflict не перезаписывает другую
-        вкладку. Повтор request_id с тем же содержимым возвращает прежнюю квитанцию,
-        даже после завершения; новое содержимое под тем же ID даёт 409. После дедлайна
-        новые ответы не принимаются.
+      description: expected_revision=0 для первого ответа. Только варианты этого задания; пустой массив
+        очищает ответ. 409 revision_conflict не перезаписывает другую вкладку. Повтор request_id с тем же
+        содержимым возвращает прежнюю квитанцию, даже после завершения; новое содержимое под тем же ID даёт
+        409. После дедлайна новые ответы не принимаются.
       parameters:
       - name: token
         in: path
@@ -1709,6 +1745,19 @@ paths:
           $ref: '#/components/responses/Error422'
         '500':
           $ref: '#/components/responses/Error500'
+        '429':
+          description: 'Лимит клиентского IP: по умолчанию 600 запросов в минуту в API; Nginx дополнительно
+            ограничивает всплески 20 запросами/с с burst 100. За NAT IP общий.'
+          headers:
+            Retry-After:
+              description: Повторить не ранее чем через указанное число секунд
+              schema:
+                type: integer
+                const: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
       requestBody:
         required: true
         content:
@@ -1720,10 +1769,9 @@ paths:
       operationId: submitAttempt
       summary: Идемпотентное завершение и оценивание
       security: []
-      description: Перед дедлайном submitted, после него expired; учитываются только
-        уже сохранённые ответы. Баллы только за полное совпадение множества; округление
-        процента до двух знаков, passed по округлённому проценту. Повтор не меняет
-        время или результат.
+      description: Перед дедлайном submitted, после него expired; учитываются только уже сохранённые ответы.
+        Баллы только за полное совпадение множества; округление процента до двух знаков, passed по округлённому
+        проценту. Повтор не меняет время или результат.
       parameters:
       - name: token
         in: path
@@ -1765,6 +1813,19 @@ paths:
           $ref: '#/components/responses/Error422'
         '500':
           $ref: '#/components/responses/Error500'
+        '429':
+          description: 'Лимит клиентского IP: по умолчанию 600 запросов в минуту в API; Nginx дополнительно
+            ограничивает всплески 20 запросами/с с burst 100. За NAT IP общий.'
+          headers:
+            Retry-After:
+              description: Повторить не ранее чем через указанное число секунд
+              schema:
+                type: integer
+                const: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
       requestBody:
         required: false
         content:
@@ -2550,15 +2611,39 @@ paths:
       operationId: getCandidateImage
       summary: Изображение своей активной попытки
       description: Канонический bearer token приглашения; HR-cookie не даёт дополнительных прав. Только
-        issued/live приглашение и in_progress попытка до deadline, принадлежащая этому приглашению.
-        Файл обязан быть в снимке вопросов/вариантов этой попытки. До старта, после завершения/срока/отзыва
-        и для других файлов — 404.
+        issued/live приглашение и in_progress попытка до deadline, принадлежащая этому приглашению. Файл
+        обязан быть в снимке вопросов/вариантов этой попытки. До старта, после завершения/срока/отзыва и
+        для других файлов — 404.
       responses:
-        '200': *id003
+        '200':
+          description: Нормализованный PNG/JPEG без исходного имени и метаданных; no-store, nosniff, no-referrer,
+            CORP same-origin.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
         '404':
           $ref: '#/components/responses/Error404'
         '500':
           $ref: '#/components/responses/Error500'
+        '429':
+          description: 'Лимит клиентского IP: по умолчанию 600 запросов в минуту в API; Nginx дополнительно
+            ограничивает всплески 20 запросами/с с burst 100. За NAT IP общий.'
+          headers:
+            Retry-After:
+              description: Повторить не ранее чем через указанное число секунд
+              schema:
+                type: integer
+                const: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
       parameters:
       - name: token
         in: path

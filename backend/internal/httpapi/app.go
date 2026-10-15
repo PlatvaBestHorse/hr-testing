@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/netip"
 	"strings"
 	"unicode/utf8"
 
@@ -21,17 +22,19 @@ import (
 )
 
 type App struct {
-	Pool          *pgxpool.Pool
-	SecureCookie  bool
-	Origins       map[string]bool
-	passwordSlots chan struct{}
-	imageSlots    chan struct{}
-	importSlots   chan struct{}
-	dummyHash     string
-	AuthKey       []byte
-	PublicURL     string
-	MailMode      string
-	SendAuthMail  func(context.Context, maildelivery.Message) error
+	Pool             *pgxpool.Pool
+	TrustedProxies   []netip.Prefix
+	CandidateIPLimit int
+	SecureCookie     bool
+	Origins          map[string]bool
+	passwordSlots    chan struct{}
+	imageSlots       chan struct{}
+	importSlots      chan struct{}
+	dummyHash        string
+	AuthKey          []byte
+	PublicURL        string
+	MailMode         string
+	SendAuthMail     func(context.Context, maildelivery.Message) error
 }
 
 func NewApp(pool *pgxpool.Pool, secure bool, origins []string) *App {
@@ -108,7 +111,7 @@ func (a *App) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/invitations", a.protected(edit, a.listInvitations))
 	mux.HandleFunc("POST /api/v1/invitations", a.protected(edit, a.issueInvitation))
 	mux.HandleFunc("POST /api/v1/invitations/{id}/revoke", a.protected(edit, a.revokeInvitation))
-	mux.HandleFunc("GET /api/v1/invite/{token}", a.publicInvitation)
+	mux.HandleFunc("GET /api/v1/invite/{token}", a.candidateRoute(a.publicInvitation))
 	mux.HandleFunc("POST /api/v1/invite/{token}/start", a.candidateRoute(a.startAttempt))
 	mux.HandleFunc("GET /api/v1/invite/{token}/attempt", a.candidateRoute(a.getAttempt))
 	mux.HandleFunc("GET /api/v1/invite/{token}/attempts/{id}/images/{image}", a.candidateRoute(a.candidateImage))

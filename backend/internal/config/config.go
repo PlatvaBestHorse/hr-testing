@@ -6,6 +6,7 @@ import (
 	"github.com/PlatvaBestHorse/hr-testing/backend/internal/maildelivery"
 	"net"
 	"net/mail"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,14 +15,16 @@ import (
 )
 
 type Config struct {
-	Address      string
-	DatabaseURL  string
-	SecureCookie bool
-	Origins      []string
-	AuthKey      []byte
-	PublicURL    string
-	MailMode     string
-	MailSender   maildelivery.Sender
+	TrustedProxies   []netip.Prefix
+	CandidateIPLimit int
+	Address          string
+	DatabaseURL      string
+	SecureCookie     bool
+	Origins          []string
+	AuthKey          []byte
+	PublicURL        string
+	MailMode         string
+	MailSender       maildelivery.Sender
 }
 
 func DatabaseURL() (string, error) {
@@ -62,6 +65,28 @@ func Load() (Config, error) {
 			return Config{}, errors.New("secure cookie mode requires HTTPS APP_ORIGINS; local development must explicitly set COOKIE_SECURE=false")
 		}
 		c.Origins = append(c.Origins, origin)
+	}
+
+	if value := os.Getenv("TRUSTED_PROXY_CIDRS"); value != "" {
+		parts := strings.Split(value, ",")
+		if len(parts) > 32 {
+			return Config{}, errors.New("too many TRUSTED_PROXY_CIDRS")
+		}
+		for _, part := range parts {
+			prefix, err := netip.ParsePrefix(strings.TrimSpace(part))
+			if err != nil || prefix.Bits() == 0 || prefix.Addr().Is4In6() {
+				return Config{}, errors.New("invalid TRUSTED_PROXY_CIDRS; use explicit proxy networks, never /0")
+			}
+			c.TrustedProxies = append(c.TrustedProxies, prefix.Masked())
+		}
+	}
+	c.CandidateIPLimit = 600
+	if value := os.Getenv("CANDIDATE_IP_LIMIT_PER_MINUTE"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > 100000 {
+			return Config{}, errors.New("invalid CANDIDATE_IP_LIMIT_PER_MINUTE")
+		}
+		c.CandidateIPLimit = n
 	}
 	var err error
 	c.AuthKey, err = hex.DecodeString(os.Getenv("AUTH_ENCRYPTION_KEY"))

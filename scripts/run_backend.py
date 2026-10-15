@@ -14,8 +14,9 @@ if path.exists():
             key, value = line.split('=', 1)
             values[key] = value
 environment = dict(os.environ)
-for name in ('AUTH_ENCRYPTION_KEY', 'AUTH_MAIL_MODE', 'APP_PUBLIC_URL', 'SMTP_ADDR', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_FROM'):
+for name in ('AUTH_ENCRYPTION_KEY', 'AUTH_MAIL_MODE', 'APP_PUBLIC_URL', 'SMTP_ADDR', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'SMTP_FROM', 'CANDIDATE_IP_LIMIT_PER_MINUTE'):
     if name in values: environment.setdefault(name, values[name])
+environment.setdefault('TRUSTED_PROXY_CIDRS', '127.0.0.1/32,::1/128')
 environment.setdefault('AUTH_MAIL_DIR', str(root / '.mailbox'))
 mode = sys.argv[1] if len(sys.argv) > 1 else 'api'
 if mode not in ('api', 'migrate', 'bootstrap', 'set-password', 'integration', 'backup', 'org-resume'):

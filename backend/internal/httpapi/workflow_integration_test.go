@@ -100,7 +100,7 @@ func TestAuthenticatedWorkflow(t *testing.T) {
 		if _, err := cleanupTx.Exec(cleanup, `DELETE FROM users WHERE id=ANY($1::uuid[]) OR email LIKE $2`, userIDs, "%"+suffix+"@fixture.test"); err != nil {
 			t.Error("user fixture cleanup failed")
 		}
-		if _, err := owner.Exec(cleanup, `DELETE FROM auth_rate_limits WHERE bucket=ANY($1::text[])`, []string{"ip:" + hex.EncodeToString(digest("192.0.2.1")), "email:" + hex.EncodeToString(digest("admin-a-"+suffix+"@fixture.test")), "email:" + hex.EncodeToString(digest("admin-b-"+suffix+"@fixture.test")), "email:" + hex.EncodeToString(digest("recruiter-"+suffix+"@fixture.test")), "email:" + hex.EncodeToString(digest("assessor-"+suffix+"@fixture.test")), "email:" + hex.EncodeToString(digest("staff-"+suffix+"@fixture.test"))}); err != nil {
+		if _, err := owner.Exec(cleanup, `DELETE FROM auth_rate_limits WHERE bucket=ANY($1::text[])`, []string{"candidate-ip:" + hex.EncodeToString(digest("192.0.2.1")), "ip:" + hex.EncodeToString(digest("192.0.2.1")), "email:" + hex.EncodeToString(digest("admin-a-"+suffix+"@fixture.test")), "email:" + hex.EncodeToString(digest("admin-b-"+suffix+"@fixture.test")), "email:" + hex.EncodeToString(digest("recruiter-"+suffix+"@fixture.test")), "email:" + hex.EncodeToString(digest("assessor-"+suffix+"@fixture.test")), "email:" + hex.EncodeToString(digest("staff-"+suffix+"@fixture.test"))}); err != nil {
 			t.Error("limiter cleanup failed")
 		}
 		if err = cleanupTx.Commit(cleanup); err != nil {
@@ -335,6 +335,9 @@ func TestAuthenticatedWorkflow(t *testing.T) {
 		exerciseAdministration(t, ctx, owner, app, call, admin, recruiter, assessor, other, orgIDs[0], orgIDs[1], password, emails["recruiter"])
 	})
 	other = login(emails["admin-b"])
+	t.Run("security hardening workflow", func(t *testing.T) {
+		exerciseHardening(t, ctx, owner, app, call, admin, recruiter, orgIDs[0], emails["recruiter"], password)
+	})
 	t.Run("legacy import workflow", func(t *testing.T) {
 		exerciseLegacyImport(t, ctx, owner, call, admin, recruiter, assessor, other, orgIDs[0], orgIDs[1])
 	})

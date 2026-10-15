@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"regexp"
 	"sort"
@@ -261,7 +260,7 @@ func (a *App) legacyImport(w http.ResponseWriter, r *http.Request, p principal, 
 		problem(w, 429, "rate_limited", "Одновременно выполняются другие импорты. Повторите позже")
 		return
 	}
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	ip := a.clientIP(r)
 	if err := a.limitAccount(r.Context(), "import:"+p.OrganizationID+":"+p.UserID, "import:"+ip, 30, 120); err != nil {
 		if errors.Is(err, errLimited) {
 			w.Header().Set("Retry-After", "900")

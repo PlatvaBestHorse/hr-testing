@@ -94,6 +94,9 @@ func (a *App) createTeamMember(w http.ResponseWriter, r *http.Request, p princip
 		a.failure(w, err)
 		return
 	}
+	if !a.confirmRetentionAdmin(w, r, p, tx) {
+		return
+	}
 	var id string
 	err = tx.QueryRow(r.Context(), `INSERT INTO users(email,display_name,password_hash) VALUES ($1,$2,$3) RETURNING id`, in.Email, in.Name, hash).Scan(&id)
 	if err != nil {
@@ -158,6 +161,9 @@ func (a *App) updateMember(w http.ResponseWriter, r *http.Request, p principal) 
 	var locked string
 	if err = tx.QueryRow(r.Context(), `SELECT id FROM organizations WHERE id=$1 FOR UPDATE`, p.OrganizationID).Scan(&locked); err != nil {
 		a.failure(w, err)
+		return
+	}
+	if !a.confirmRetentionAdmin(w, r, p, tx) {
 		return
 	}
 	var m member

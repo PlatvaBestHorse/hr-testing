@@ -29,6 +29,8 @@ func main() {
 	}
 	defer p.Close()
 	app := httpapi.NewApp(p, c.SecureCookie, c.Origins)
+	app.TrustedProxies = c.TrustedProxies
+	app.CandidateIPLimit = c.CandidateIPLimit
 	app.AuthKey = c.AuthKey
 	app.PublicURL = c.PublicURL
 	app.MailMode = c.MailMode
@@ -41,7 +43,14 @@ func main() {
 		defer close(workerDone)
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
+		nextCleanup := time.Time{}
 		for {
+			if time.Now().After(nextCleanup) {
+				if err := app.CleanupRateLimits(workerCtx); err != nil && workerCtx.Err() == nil {
+					slog.Error("rate limit cleanup failed")
+				}
+				nextCleanup = time.Now().Add(time.Minute)
+			}
 			if err := app.ExpireDue(workerCtx); err != nil && workerCtx.Err() == nil {
 				slog.Error("attempt expiry processing failed")
 			}

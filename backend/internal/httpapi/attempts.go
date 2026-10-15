@@ -72,6 +72,9 @@ func (a *App) candidateRoute(next http.HandlerFunc) http.HandlerFunc {
 			problem(w, 403, "origin_rejected", "Источник запроса не разрешён")
 			return
 		}
+		if !a.limitCandidate(w, r) {
+			return
+		}
 		next(w, r)
 	}
 }

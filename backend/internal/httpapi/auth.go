@@ -6,7 +6,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -88,7 +87,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		problem(w, 429, "rate_limited", "Слишком много попыток входа. Повторите позже")
 		return
 	}
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	ip := a.clientIP(r)
 	if err := a.limitLogin(r.Context(), in.Email, ip); err != nil {
 		if err == errLimited {
 			w.Header().Set("Retry-After", "900")

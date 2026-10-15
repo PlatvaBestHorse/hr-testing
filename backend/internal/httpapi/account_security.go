@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -44,7 +43,7 @@ func (a *App) accountSlot(w http.ResponseWriter, r *http.Request, p principal) b
 		problem(w, 429, "rate_limited", "Повторите позже")
 		return false
 	}
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	ip := a.clientIP(r)
 	if err := a.limitAccount(r.Context(), "security:"+p.UserID, ip, 15, 90); err != nil {
 		<-a.passwordSlots
 		if errors.Is(err, errLimited) {
@@ -459,7 +458,7 @@ func (a *App) requestPasswordRecovery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "recovery_unavailable", "Восстановление по почте не настроено")
 		return
 	}
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	ip := a.clientIP(r)
 	if err := a.limitAccount(r.Context(), "recovery:"+in.Email, ip, 3, 20); err != nil {
 		if errors.Is(err, errLimited) {
 			problem(w, 429, "rate_limited", "Повторите через 15 минут")
@@ -549,7 +548,7 @@ func (a *App) completePasswordRecovery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 429, "rate_limited", "Повторите позже")
 		return
 	}
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	ip := a.clientIP(r)
 	if err := a.limitAccount(r.Context(), "reset:"+hex.EncodeToString(digest(in.Token)), ip, 8, 40); err != nil {
 		if errors.Is(err, errLimited) {
 			problem(w, 429, "rate_limited", "Повторите через 15 минут")
