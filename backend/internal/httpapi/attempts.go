@@ -109,9 +109,10 @@ func shuffle[T any](values []T) error {
 
 func (a *App) startAttempt(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		RequestID  string `json:"request_id"`
-		Consent    bool   `json:"consent"`
-		NewAttempt bool   `json:"new_attempt"`
+		RequestID       string `json:"request_id"`
+		Consent         bool   `json:"consent"`
+		NewAttempt      bool   `json:"new_attempt"`
+		ConsentRevision *int   `json:"consent_revision"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -126,6 +127,15 @@ func (a *App) startAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(context.Background())
+	var consentOrg string
+	if err = tx.QueryRow(r.Context(), "SELECT organization_id FROM invitations WHERE token_hash=$1", digest(r.PathValue("token"))).Scan(&consentOrg); err != nil {
+		a.failure(w, err)
+		return
+	}
+	if err = lockConsent(r.Context(), tx, consentOrg, true); err != nil {
+		a.failure(w, err)
+		return
+	}
 	i, err := lockInvite(r.Context(), tx, r.PathValue("token"))
 	if err != nil {
 		a.failure(w, err)
@@ -156,6 +166,19 @@ func (a *App) startAttempt(w http.ResponseWriter, r *http.Request) {
 	now, err := databaseNow(r.Context(), tx)
 	if err != nil {
 		a.failure(w, err)
+		return
+	}
+	document, err := readConsent(r.Context(), tx, i.Org)
+	if err != nil {
+		a.failure(w, err)
+		return
+	}
+	if a.SecureCookie && !document.Approved {
+		problem(w, 503, "privacy_not_ready", "Организация ещё не утвердила документы обработки данных. Обратитесь к HR")
+		return
+	}
+	if (in.ConsentRevision == nil && document.Revision != 0) || (in.ConsentRevision != nil && *in.ConsentRevision != document.Revision) {
+		problem(w, 409, "consent_changed", "Документы изменились. Обновите страницу и ознакомьтесь с новой версией")
 		return
 	}
 	var used int
@@ -237,8 +260,14 @@ func (a *App) startAttempt(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	_, err = tx.Exec(r.Context(), `INSERT INTO candidate_consents(organization_id,candidate_id,document_version,purpose,is_granted,evidence)
- VALUES($1,$2,'development-passage-v1','test_passage',true,jsonb_build_object('attempt_id',$3::text))`, i.Org, i.Candidate, id)
+	var documentID any
+	version := "development-passage-v1"
+	if document.ID != "" {
+		documentID = document.ID
+		version = "document:" + document.ID
+	}
+	_, err = tx.Exec(r.Context(), `INSERT INTO candidate_consents(organization_id,candidate_id,document_version,purpose,is_granted,evidence,consent_document_id)
+ VALUES($1,$2,$4,'test_passage',true,jsonb_build_object('attempt_id',$3::text,'consent_revision',$5::int),$6)`, i.Org, i.Candidate, id, version, document.Revision, documentID)
 	if err == nil {
 		_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(organization_id,action,object_type,object_id) VALUES($1,'attempt.start','attempt',$2)`, i.Org, id)
 	}

@@ -19,6 +19,20 @@ async function screen() {
 beforeEach(() => { mocked.mockReset() })
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 describe('candidate answer persistence', () => {
+  it('shows the consent version and sends the version the candidate accepted', async () => {
+    mocked.mockImplementation(async (path) => {
+      if (path.endsWith('/attempt')) throw new ApiError(404, 'not_found', 'No attempt')
+      if (path.endsWith('/start')) return snapshot()
+      return { title: 'Test', description: '', organization_name: 'Fixture', duration_seconds: 600, question_count: 1, attempts_remaining: 1, max_attempts: 1, expires_at: '2026-10-16T12:00:00Z', consent_document: { id: 'document', revision: 2, approved: true, operator_name: 'Fixture operator', contact: 'privacy@example.test', consent_text: 'Consent version two', policy_text: 'Policy version two' } }
+    })
+    const wrapper = await screen()
+    expect(wrapper.text()).toContain('Согласие и политика обработки данных · версия 2')
+    expect(wrapper.text()).toContain('Consent version two')
+    await wrapper.get('input[type=checkbox]').setValue(true)
+    await wrapper.findAll('button').find(button => button.text() === 'Начать тест')!.trigger('click'); await flushPromises()
+    const request = mocked.mock.calls.find(([path]) => path.endsWith('/start'))
+    expect(JSON.parse(String(request?.[1]?.body)).consent_revision).toBe(2)
+  })
   it('restores confirmed answers without starting another attempt', async () => {
     const data = snapshot(); data.items[0]!.selected_option_ids = ['two']; data.items[0]!.revision = 4
     mocked.mockResolvedValue(data)

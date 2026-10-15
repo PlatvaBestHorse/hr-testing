@@ -5,7 +5,7 @@ import { Layers, Clock, ClipboardList } from '@lucide/vue'
 import { api, ApiError } from './session'
 import { formatDate, formatDuration } from './domain'
 import QuestionImage from './QuestionImage.vue'
-interface Info { title: string; description: string; organization_name: string; duration_seconds: number; question_count: number; attempts_remaining: number; max_attempts: number; expires_at: string }
+interface Info { consent_document: { revision: number; operator_name: string; contact: string; consent_text: string; policy_text: string; approved: boolean }; title: string; description: string; organization_name: string; duration_seconds: number; question_count: number; attempts_remaining: number; max_attempts: number; expires_at: string }
 interface Item { id: string; position: number; type: string; body: string; passage: string; image_id: string; options: { id: string; label: string; image_id: string }[]; selected_option_ids: string[]; revision: number }
 interface Attempt { id: string; status: string; title: string; deadline_at: string; server_now: string; attempts_remaining: number; items: Item[]; score?: { percent: string; passed: boolean } }
 interface Receipt { revision: number; selected_option_ids: string[] }
@@ -59,7 +59,7 @@ async function start(newAttempt = false) {
   if (busy.value) return
   busy.value = true; error.value = ''; notice.value = ''
   try {
-    applySnapshot(await request<Attempt>('/start', { method: 'POST', body: JSON.stringify({ request_id: startRequest, consent: consent.value, new_attempt: newAttempt }) }), true)
+    applySnapshot(await request<Attempt>('/start', { method: 'POST', body: JSON.stringify({ request_id: startRequest, consent: consent.value, consent_revision: info.value?.consent_document.revision, new_attempt: newAttempt }) }), true)
     startRequest = crypto.randomUUID(); index.value = 0
   } catch (err) { error.value = (err as Error).message }
   finally { busy.value = false }
@@ -165,7 +165,7 @@ onBeforeUnmount(() => { alive = false; clearInterval(ticker); clearInterval(poll
           <h2>{{ attempt.status === 'expired' ? 'Время вышло' : attempt.status === 'cancelled' ? 'Попытка отменена' : 'Тест завершён' }}</h2><p>Ответы обработаны. Результат доступен HR.</p>
           <p v-if="notice" class="form-error">{{ notice }}</p>
           <div v-if="attempt.score" class="candidate-score"><strong>{{ attempt.score.percent }}%</strong><p>{{ attempt.score.passed ? 'Проходной балл достигнут' : 'Проходной балл не достигнут' }}</p></div><p v-else class="muted-text">Показ баллов кандидату выключен в настройках теста.</p>
-          <template v-if="attempt.attempts_remaining > 0 && attempt.status !== 'cancelled'"><label class="passage-consent"><input v-model="consent" type="checkbox" />Я ознакомился с правилами и согласен на обработку ответов для оценки.</label><button class="primary-button" :disabled="busy || !consent" @click="start(true)">Начать новую попытку</button></template>
+          <template v-if="attempt.attempts_remaining > 0 && attempt.status !== 'cancelled'"><section v-if="info?.consent_document" class="editor-card"><p v-if="!info.consent_document.approved" class="muted-text">Тестовый контур: документы ещё не утверждены организацией. Используйте только синтетические данные.</p><p v-if="info.consent_document.operator_name">Оператор: {{ info.consent_document.operator_name }} · {{ info.consent_document.contact }}</p><details><summary>Согласие и политика обработки данных · версия {{ info.consent_document.revision }}</summary><h3>Согласие</h3><p style="white-space: pre-wrap">{{ info.consent_document.consent_text }}</p><h3>Политика обработки данных</h3><p style="white-space: pre-wrap">{{ info.consent_document.policy_text }}</p></details></section><label class="passage-consent"><input v-model="consent" type="checkbox" />Я ознакомился с правилами и согласен на обработку ответов для оценки.</label><button class="primary-button" :disabled="busy || !consent" @click="start(true)">Начать новую попытку</button></template>
         </template>
       </template>
       <template v-else-if="info">
@@ -173,7 +173,7 @@ onBeforeUnmount(() => { alive = false; clearInterval(ticker); clearInterval(poll
         <div class="invite-facts"><div><Clock :size="20" /><strong>{{ formatDuration(info.duration_seconds) }}</strong><span>на прохождение</span></div><div><ClipboardList :size="20" /><strong>{{ info.question_count }}</strong><span>вопросов</span></div></div><p class="muted-text">Попыток осталось: {{ info.attempts_remaining }} из {{ info.max_attempts }}.</p><p class="muted-text">Ссылка действует до {{ formatDate(info.expires_at) }}.</p>
         <div class="candidate-stage-note">Таймер начнётся после нажатия «Начать тест». Ответы сохраняются автоматически. Перезагрузка страницы не останавливает таймер. Без соединения изменения не сохраняются; при истечении времени учитываются только ответы, принятые сервером. Если срок ссылки наступит раньше, тест завершится в этот срок.</div>
         <p class="muted-text">Ответы и время прохождения передаются организации {{ info.organization_name }} для оценки. Это среда разработки: используйте только тестовые данные.</p>
-        <label class="passage-consent"><input v-model="consent" type="checkbox" />Я ознакомился с правилами и согласен на обработку ответов для оценки.</label><button class="primary-button" :disabled="busy || !consent" @click="start()">{{ busy ? 'Начинаем…' : 'Начать тест' }}</button>
+        <section v-if="info?.consent_document" class="editor-card"><p v-if="!info.consent_document.approved" class="muted-text">Тестовый контур: документы ещё не утверждены организацией. Используйте только синтетические данные.</p><p v-if="info.consent_document.operator_name">Оператор: {{ info.consent_document.operator_name }} · {{ info.consent_document.contact }}</p><details><summary>Согласие и политика обработки данных · версия {{ info.consent_document.revision }}</summary><h3>Согласие</h3><p style="white-space: pre-wrap">{{ info.consent_document.consent_text }}</p><h3>Политика обработки данных</h3><p style="white-space: pre-wrap">{{ info.consent_document.policy_text }}</p></details></section><label class="passage-consent"><input v-model="consent" type="checkbox" />Я ознакомился с правилами и согласен на обработку ответов для оценки.</label><button class="primary-button" :disabled="busy || !consent" @click="start()">{{ busy ? 'Начинаем…' : 'Начать тест' }}</button>
       </template>
       <template v-else-if="error"><h1>Приглашение недоступно</h1><p>Свяжитесь с HR, чтобы получить действующую ссылку.</p><button class="secondary-button" @click="load">Проверить ещё раз</button></template>
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>

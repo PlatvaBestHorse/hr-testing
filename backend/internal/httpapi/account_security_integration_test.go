@@ -48,7 +48,7 @@ func exerciseAccountSecurity(t *testing.T, ctx context.Context, owner *pgxpool.P
 	}
 	clearLimits := func() {
 		t.Helper()
-		_, e := owner.Exec(ctx, "DELETE FROM auth_rate_limits WHERE bucket=ANY($1::text[])", []string{"email:" + hex.EncodeToString(digest(email)), "account:" + hex.EncodeToString(digest("security:"+recruiter.userID)), "account:" + hex.EncodeToString(digest("recovery:"+email)), "account-ip:" + hex.EncodeToString(digest("192.0.2.1"))})
+		_, e := owner.Exec(ctx, "DELETE FROM auth_rate_limits WHERE bucket=ANY($1::text[])", []string{"email:" + hex.EncodeToString(digest(email)), "account:" + hex.EncodeToString(digest("security:"+recruiter.userID)), "account:" + hex.EncodeToString(digest("recovery:"+email)), "account-ip:security:" + hex.EncodeToString(digest("192.0.2.1")), "account-ip:recovery:" + hex.EncodeToString(digest("192.0.2.1")), "account-ip:reset:" + hex.EncodeToString(digest("192.0.2.1")), "account-ip:import:" + hex.EncodeToString(digest("192.0.2.1"))})
 		if e != nil {
 			t.Fatal("cannot reset fixture limit")
 		}

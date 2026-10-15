@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { randomBytes, createHmac } from 'node:crypto'
-const credentials = JSON.parse(readFileSync(new URL('../../.env.admin.json', import.meta.url), 'utf8'))
+const credentials = JSON.parse(readFileSync(process.env.E2E_CREDENTIALS_FILE || new URL('../../.env.admin.json', import.meta.url), 'utf8'))
 const mailbox = new URL('../../.mailbox/', import.meta.url)
 function readLink(email: string, previous: Set<string>) {
   for (const file of readdirSync(mailbox)) {

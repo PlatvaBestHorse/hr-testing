@@ -57,6 +57,9 @@ func (a *App) accountSlot(w http.ResponseWriter, r *http.Request, p principal) b
 }
 
 func (a *App) limitAccount(ctx context.Context, subject, ip string, perAccount, perIP int) error {
+	// Different operations have different budgets. MFA/password settings must
+	// not consume the smaller password-recovery IP budget for an entire office.
+	family, _, _ := strings.Cut(subject, ":")
 	tx, err := a.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -66,7 +69,7 @@ func (a *App) limitAccount(ctx context.Context, subject, ip string, perAccount, 
 	for _, b := range []struct {
 		key string
 		max int
-	}{{"account:" + hex.EncodeToString(digest(subject)), perAccount}, {"account-ip:" + hex.EncodeToString(digest(ip)), perIP}} {
+	}{{"account:" + hex.EncodeToString(digest(subject)), perAccount}, {"account-ip:" + family + ":" + hex.EncodeToString(digest(ip)), perIP}} {
 		var n int
 		err = tx.QueryRow(ctx, `INSERT INTO auth_rate_limits(bucket) VALUES($1) ON CONFLICT(bucket) DO UPDATE SET
   attempts=CASE WHEN auth_rate_limits.window_started_at<clock_timestamp()-interval '15 minutes' THEN 1 ELSE auth_rate_limits.attempts+1 END,

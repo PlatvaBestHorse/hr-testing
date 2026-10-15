@@ -1,4 +1,4 @@
-.PHONY: init install up down db migrate api web test integration runtime-check build check admin admin-dev admin-docker production-test production-smoke backup backup-verify backup-list backup-prune
+.PHONY: init install up down db migrate api web test integration runtime-check build check admin admin-dev admin-docker production-test production-smoke backup backup-verify backup-ledger backup-list backup-prune
 
 init:
 	python3 scripts/init_env.py
@@ -62,6 +62,9 @@ backup:
 
 backup-verify:
 	python3 scripts/run_backend.py backup verify $(if $(FILE),--file "$(FILE)",)
+
+backup-ledger:
+	python3 scripts/run_backend.py backup erasures
 
 backup-list:
 	python3 scripts/run_backend.py backup list

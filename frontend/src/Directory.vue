@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Plus, Search, Users, BriefcaseBusiness } from '@lucide/vue'
 import { api, session } from './session'
+import CandidateErasure from './CandidateErasure.vue'
 import { formatDate, type List } from './domain'
 const props = defineProps<{ kind: 'candidates' | 'vacancies' }>()
 interface Entry { id: string; status: string; erased_at?: string | null; retention_hold?: boolean; full_name?: string; email?: string; phone?: string; title?: string; department?: string; assessor_ids?: string[] }
@@ -12,7 +13,7 @@ const form = reactive({ full_name: '', email: '', phone: '', title: '', departme
 let generation = 0
 function title(e: Entry) { return e.full_name || e.title || '' }
 async function load() {
-  const current = ++generation; loading.value = true; error.value = ''
+  const current = ++generation; loading.value = true; error.value = ''; saved.value = null
   try {
     if (isList.value) { const data = await api<List<Entry>>(base.value + '?' + new URLSearchParams({ search: search.value, status: filterStatus.value, page: String(page.value) })); if (current === generation) { items.value = data.items; total.value = data.total } }
     else if (isNew.value) { saved.value = null; Object.assign(form, { full_name: '', email: '', phone: '', title: '', department: '', status: isCandidate.value ? 'active' : 'open', assessor_ids: [] }) }
@@ -45,8 +46,9 @@ watch(filterStatus, filter)
       <template v-if="isCandidate"><label class="form-field">ФИО кандидата<input v-model="form.full_name" required maxlength="250" :disabled="!editable" /></label><div class="form-grid"><label class="form-field">Почта кандидата<input v-model="form.email" type="email" maxlength="320" :disabled="!editable" /></label><label class="form-field">Телефон кандидата<input v-model="form.phone" type="tel" maxlength="40" :disabled="!editable" /></label></div></template>
       <template v-else><label class="form-field">Название вакансии<input v-model="form.title" required maxlength="250" :disabled="!editable" /></label><label class="form-field">Подразделение<input v-model="form.department" maxlength="200" :disabled="!editable" /></label><section v-if="editable"><h2>Оценщики</h2><p class="muted-text">Оценщик видит только назначенные ему вакансии и связанных кандидатов.</p><label v-for="m in assessors" :key="m.id" class="check-field"><input v-model="form.assessor_ids" type="checkbox" :value="m.id" />{{ m.display_name }}</label><p v-if="!assessors.length" class="muted-text">Нет активных оценщиков. Администратор может добавить их в разделе «Команда».</p></section></template>
       <label class="form-field">Статус<select v-model="form.status" aria-label="Статус карточки" :disabled="!editable"><template v-if="isCandidate"><option value="active">Активен</option><option value="archived">В архиве</option></template><template v-else><option value="open">Открыта</option><option value="closed">Закрыта</option><option value="archived">В архиве</option></template></select></label>
-      <p v-if="isCandidate && saved?.retention_hold" class="muted-text">Установлен запрет очистки контактных данных.</p><RouterLink v-if="isCandidate && saved && !saved.erased_at && session.user?.role === 'org_admin'" :to="'/retention?candidate_id=' + saved.id" class="back-link">Управлять хранением данных кандидата</RouterLink><div class="form-actions"><button v-if="editable" class="primary-link" :disabled="busy">{{ busy ? 'Сохраняем…' : isCandidate ? 'Сохранить кандидата' : 'Сохранить вакансию' }}</button><RouterLink v-if="isCandidate && saved && editable && saved.status === 'active'" :to="'/invitations?candidate_id=' + saved.id" class="secondary-button">Пригласить на тест</RouterLink></div>
+      <p v-if="isCandidate && saved?.retention_hold" class="muted-text">Установлен запрет удаления данных.</p><RouterLink v-if="isCandidate && saved && session.user?.role === 'org_admin'" :to="'/retention?candidate_id=' + saved.id" class="back-link">Управлять хранением данных кандидата</RouterLink><div class="form-actions"><button v-if="editable" class="primary-link" :disabled="busy">{{ busy ? 'Сохраняем…' : isCandidate ? 'Сохранить кандидата' : 'Сохранить вакансию' }}</button><RouterLink v-if="isCandidate && saved && editable && saved.status === 'active'" :to="'/invitations?candidate_id=' + saved.id" class="secondary-button">Пригласить на тест</RouterLink></div>
       <p v-if="isCandidate && saved" class="muted-text">Результаты прохождений доступны в разделе «Результаты».</p>
     </form>
+    <CandidateErasure v-if="!isList && isCandidate && saved && session.user?.role === 'org_admin'" :key="saved.id" :candidate-id="saved.id" @erased="router.replace('/candidates')" />
   </template>
 </template>

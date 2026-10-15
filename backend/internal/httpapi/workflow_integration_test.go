@@ -88,7 +88,7 @@ func TestAuthenticatedWorkflow(t *testing.T) {
 				return
 			}
 		}
-		for _, table := range []string{"imported_tests", "imported_questions", "import_batches", "result_comments", "account_tokens", "auth_sessions", "retention_previews", "retention_policies", "outbound_messages", "audit_events", "candidate_consents", "answer_receipts", "start_receipts", "attempt_answers", "attempt_items", "attempts", "invitations", "vacancy_assessors", "candidates", "vacancies", "test_items", "test_versions", "tests", "question_options", "question_versions", "attachments", "questions", "categories", "memberships", "organizations"} {
+		for _, table := range []string{"erasure_previews", "candidate_erasures", "imported_tests", "imported_questions", "import_batches", "result_comments", "account_tokens", "auth_sessions", "retention_previews", "retention_policies", "outbound_messages", "audit_events", "candidate_consents", "consent_documents", "answer_receipts", "start_receipts", "attempt_answers", "attempt_items", "attempts", "invitations", "vacancy_assessors", "candidates", "vacancies", "test_items", "test_versions", "tests", "question_options", "question_versions", "attachments", "questions", "categories", "memberships", "organizations"} {
 			column := "organization_id"
 			if table == "organizations" {
 				column = "id"
@@ -340,6 +340,9 @@ func TestAuthenticatedWorkflow(t *testing.T) {
 	})
 	t.Run("legacy import workflow", func(t *testing.T) {
 		exerciseLegacyImport(t, ctx, owner, call, admin, recruiter, assessor, other, orgIDs[0], orgIDs[1])
+	})
+	t.Run("individual privacy workflow", func(t *testing.T) {
+		exercisePrivacy(t, ctx, owner, app, call, admin, recruiter, assessor, other, orgIDs[0], orgIDs[1])
 	})
 	t.Run("account security workflow", func(t *testing.T) {
 		exerciseAccountSecurity(t, ctx, owner, app, call, recruiter, other, password, emails["recruiter"])

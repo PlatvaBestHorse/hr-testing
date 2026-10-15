@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"github.com/PlatvaBestHorse/hr-testing/backend/internal/privacy"
 	"github.com/jackc/pgx/v5"
 	"net/http"
 	"time"
@@ -89,6 +90,10 @@ func (a *App) issueInvitation(w http.ResponseWriter, r *http.Request, p principa
 		return
 	}
 	defer tx.Rollback(context.Background())
+	if err = privacy.LockCandidate(r.Context(), tx, p.OrganizationID, in.CandidateID); err != nil {
+		a.failure(w, err)
+		return
+	}
 	var candidateName, status string
 	err = tx.QueryRow(r.Context(), `SELECT full_name,status FROM candidates WHERE organization_id=$1 AND id=$2 FOR SHARE`, p.OrganizationID, in.CandidateID).Scan(&candidateName, &status)
 	if err != nil {
@@ -206,17 +211,17 @@ func (a *App) publicInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Public DTO is intentionally independent of HR test/question/candidate DTOs.
-	var title, description, orgName string
+	var title, description, orgName, orgID string
 	var duration, count, max, used int
 	var expiry time.Time
 	var active bool
-	err = a.Pool.QueryRow(r.Context(), `SELECT v.title,coalesce(v.description,''),o.name,v.duration_seconds,
+	err = a.Pool.QueryRow(r.Context(), `SELECT v.title,coalesce(v.description,''),o.name,o.id,v.duration_seconds,
  (SELECT count(*) FROM test_items WHERE organization_id=i.organization_id AND test_version_id=v.id),i.max_attempts,
  (SELECT count(*) FROM attempts WHERE organization_id=i.organization_id AND invitation_id=i.id),i.expires_at,
  EXISTS(SELECT 1 FROM attempts WHERE organization_id=i.organization_id AND invitation_id=i.id AND status='in_progress' AND deadline_at>now())
  FROM invitations i JOIN test_versions v ON v.organization_id=i.organization_id AND v.id=i.test_version_id
  JOIN organizations o ON o.id=i.organization_id JOIN candidates c ON c.organization_id=i.organization_id AND c.id=i.candidate_id
- WHERE i.token_hash=$1 AND i.status='issued' AND i.expires_at>now() AND v.status='published' AND c.status='active' AND o.status='active'`, digest(token)).Scan(&title, &description, &orgName, &duration, &count, &max, &used, &expiry, &active)
+ WHERE i.token_hash=$1 AND i.status='issued' AND i.expires_at>now() AND v.status='published' AND c.status='active' AND o.status='active'`, digest(token)).Scan(&title, &description, &orgName, &orgID, &duration, &count, &max, &used, &expiry, &active)
 	if err == pgx.ErrNoRows || (err == nil && used >= max && !active) {
 		problem(w, 404, "invite_unavailable", "Приглашение недоступно. Уточните ссылку у HR")
 		return
@@ -229,5 +234,16 @@ func (a *App) publicInvitation(w http.ResponseWriter, r *http.Request) {
 	if remaining < 0 {
 		remaining = 0
 	}
-	write(w, 200, map[string]any{"title": title, "description": description, "organization_name": orgName, "duration_seconds": duration, "question_count": count, "max_attempts": max, "attempts_remaining": remaining, "can_resume": active, "expires_at": expiry})
+	tx, err := a.Pool.Begin(r.Context())
+	if err != nil {
+		a.failure(w, err)
+		return
+	}
+	defer tx.Rollback(context.Background())
+	document, err := readConsent(r.Context(), tx, orgID)
+	if err != nil {
+		a.failure(w, err)
+		return
+	}
+	write(w, 200, map[string]any{"consent_document": document, "title": title, "description": description, "organization_name": orgName, "duration_seconds": duration, "question_count": count, "max_attempts": max, "attempts_remaining": remaining, "can_resume": active, "expires_at": expiry})
 }

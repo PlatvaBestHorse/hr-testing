@@ -29,7 +29,7 @@ func TestPostgresFoundation(t *testing.T) {
 		t.Fatal("repeat migration:", RedactError(err))
 	}
 	var count int
-	if err = owner.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 14 {
+	if err = owner.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 15 {
 		t.Fatalf("migration registry: count=%d err=%v", count, err)
 	}
 	app, err := Open(ctx, appURL)

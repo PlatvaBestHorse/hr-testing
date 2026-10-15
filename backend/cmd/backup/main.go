@@ -40,6 +40,7 @@ type manifest struct {
 }
 type operator struct {
 	root, dir, keyPath string
+	ledgerPath         string
 	key                []byte
 	cfg                *pgx.ConnConfig
 }
@@ -53,12 +54,13 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("expected create, verify, restore, list or prune")
+		return errors.New("expected create, verify, restore, erasures, list or prune")
 	}
 	mode := os.Args[1]
 	flags := flag.NewFlagSet("backup", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	file := flags.String("file", "", "encrypted archive (defaults to latest for verify)")
+	ledger := flags.String("ledger", "", "current independent encrypted erasure journal; required for restore")
 	target := flags.String("target", "", "fresh hr_recovery_* database; restore only")
 	days := flags.Int("days", 0, "prune archives older than this number of days")
 	confirm := flags.String("confirm", "", "DELETE_OLD_BACKUPS to apply prune")
@@ -91,7 +93,7 @@ func run() error {
 	if mode == "list" || mode == "prune" {
 		return o.inventory(mode, *days, *confirm)
 	}
-	if mode != "create" && mode != "verify" && mode != "restore" {
+	if mode != "create" && mode != "verify" && mode != "restore" && mode != "erasures" {
 		return errors.New("unknown backup command")
 	}
 	o.cfg, err = pgx.ParseConfig(os.Getenv("DATABASE_URL"))
@@ -112,6 +114,16 @@ func run() error {
 	var currentUser string
 	if err = conn.QueryRow(ctx, "SELECT current_user").Scan(&currentUser); err != nil || currentUser == "hr_app" {
 		return errors.New("backup requires the local migration owner")
+	}
+	if mode == "erasures" {
+		_, err := o.exportErasures(ctx, conn)
+		return err
+	}
+	if mode == "restore" {
+		if *confirm != "CURRENT_ERASURE_LEDGER" {
+			return errors.New("restore requires --confirm CURRENT_ERASURE_LEDGER after verifying the independent journal is current")
+		}
+		o.ledgerPath = *ledger
 	}
 	if mode == "create" {
 		return o.create(ctx, conn)
@@ -151,7 +163,8 @@ func (o *operator) loadKey(create bool) ([]byte, error) {
 	_, statErr := os.Lstat(o.keyPath)
 	if err != nil && os.IsNotExist(statErr) && create {
 		files, e := o.files()
-		if e != nil || len(files) > 0 {
+		journals, journalErr := filepath.Glob(filepath.Join(o.dir, "*.hrledger"))
+		if e != nil || journalErr != nil || len(files) > 0 || len(journals) > 0 {
 			return nil, errors.New("backup key is missing; recover the original key, do not replace it")
 		}
 		key := make([]byte, 32)
@@ -394,6 +407,13 @@ func (o *operator) restore(ctx context.Context, owner *pgx.Conn, path, target st
 	if err != nil {
 		return err
 	} // authenticate before CREATE DATABASE
+	var ledger erasureLedger
+	if keep {
+		ledger, err = o.loadErasureLedger(m.Created)
+		if err != nil {
+			return err
+		}
+	}
 	if target == "" {
 		id := make([]byte, 8)
 		if _, err = rand.Read(id); err != nil {
@@ -449,13 +469,16 @@ func (o *operator) restore(ctx context.Context, owner *pgx.Conn, path, target st
 		return err
 	}
 	if keep {
+		if err = reconcileErasures(ctx, owner, conn, ledger); err != nil {
+			return err
+		}
 		// Offline recovery safety: old cookies, invitations and outbound messages
 		// must not reactivate when an operator later switches the API.
-		if _, err = conn.Exec(ctx, "BEGIN; DELETE FROM auth_sessions; DELETE FROM retention_previews; DELETE FROM account_tokens; DELETE FROM mfa_recovery_codes; UPDATE user_security SET pending_ciphertext=NULL,pending_until=NULL,last_step=greatest(last_step,floor(extract(epoch FROM clock_timestamp())/30)::bigint); UPDATE invitations SET status='revoked'; UPDATE outbound_messages SET status='cancelled' WHERE status IN ('pending','failed'); COMMIT"); err != nil {
+		if _, err = conn.Exec(ctx, "BEGIN; DELETE FROM auth_sessions; DELETE FROM retention_previews; DELETE FROM erasure_previews; DELETE FROM account_tokens; DELETE FROM mfa_recovery_codes; UPDATE user_security SET pending_ciphertext=NULL,pending_until=NULL,last_step=greatest(last_step,floor(extract(epoch FROM clock_timestamp())/30)::bigint); UPDATE invitations SET status='revoked'; UPDATE outbound_messages SET status='cancelled' WHERE status IN ('pending','failed'); COMMIT"); err != nil {
 			return errors.New("cannot disable restored access; isolated database is being removed")
 		}
 		retained = true
-		fmt.Printf("Restored and checked %s (%d tables). Sessions/links revoked; API remains connected to its original database. Reconcile deletions newer than %s before activation.\n", target, len(actual), m.Created.Format(time.RFC3339))
+		fmt.Printf("Restored and checked %s (%d tables). Sessions/links revoked; API remains connected to its original database. Independent erasure journal reapplied through %s; verify its completeness before activation.\n", target, len(actual), ledger.Exported.Format(time.RFC3339))
 	} else {
 		fmt.Printf("Verified restore (%d tables, exact contents, migrations and app privileges); temporary database will be removed. Snapshot: %s\n", len(actual), m.Created.Format(time.RFC3339))
 	}
@@ -471,6 +494,13 @@ func checkPrivileges(ctx context.Context, conn *pgx.Conn) error {
  AND NOT has_table_privilege('hr_app','public.audit_events','DELETE')
  AND NOT has_table_privilege('hr_app','public.schema_migrations','UPDATE')
 	 AND NOT has_table_privilege('hr_app','public.attachments','UPDATE')
+ AND NOT has_table_privilege('hr_app','public.candidate_erasures','UPDATE')
+ AND NOT has_table_privilege('hr_app','public.candidate_erasures','DELETE')
+ AND NOT has_table_privilege('hr_app','public.consent_documents','UPDATE')
+ AND NOT has_table_privilege('hr_app','public.consent_documents','DELETE')
+ AND NOT has_table_privilege('hr_app','public.privacy_ledger_state','UPDATE')
+ AND NOT has_table_privilege('hr_app','public.privacy_ledger_state','DELETE')
+ AND NOT has_table_privilege('hr_app','public.privacy_ledger_state','INSERT')
  AND has_function_privilege('hr_app','public.prune_audit_events(uuid,bytea)','EXECUTE')
  AND NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='hr_app' AND (rolsuper OR rolbypassrls OR rolcreatedb OR rolcreaterole))
  AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_roles r ON r.oid=c.relowner WHERE n.nspname='public' AND r.rolname='hr_app')

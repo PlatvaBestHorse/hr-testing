@@ -29,4 +29,13 @@ describe('candidate contacts after retention', () => {
     expect((wrapper.get('input').element as HTMLInputElement).disabled).toBe(false)
     expect(wrapper.findAll('button').some(button => button.text() === 'Сохранить кандидата')).toBe(true)
   })
+  it('removes the previous candidate and erasure action when the next card is unavailable', async () => {
+    const wrapper = await screen(false)
+    expect(wrapper.text()).toContain('Подготовить полное удаление')
+    mocked.mockRejectedValueOnce(new Error('Кандидат не найден'))
+    await wrapper.vm.$router.push('/candidates/missing'); await flushPromises()
+    expect(wrapper.get('[role=alert]').text()).toContain('Кандидат не найден')
+    expect(wrapper.text()).not.toContain('Подготовить полное удаление')
+    expect(wrapper.find('form').exists()).toBe(false)
+  })
 })

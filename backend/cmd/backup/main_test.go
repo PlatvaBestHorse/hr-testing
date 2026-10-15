@@ -18,6 +18,7 @@ import (
 	"github.com/PlatvaBestHorse/hr-testing/backend/internal/backup"
 	"github.com/PlatvaBestHorse/hr-testing/backend/internal/database"
 	"github.com/PlatvaBestHorse/hr-testing/backend/internal/identity"
+	"github.com/PlatvaBestHorse/hr-testing/backend/internal/privacy"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -154,7 +155,7 @@ func TestBackupRestoreIntegration(t *testing.T) {
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		for _, name := range []string{source, target} {
+		for _, name := range []string{source, target, target + "_contacts", target + "_all"} {
 			if _, e := owner.Exec(cleanup, "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)"); e != nil {
 				t.Errorf("cannot clean isolated fixture database %s", name)
 			}
@@ -252,6 +253,13 @@ func TestBackupRestoreIntegration(t *testing.T) {
 	if e = o.restore(ctx, conn, files[0], "", false); e != nil {
 		t.Fatal(e)
 	}
+	if e = o.restore(ctx, conn, files[0], target, true); e == nil {
+		t.Fatal("retained restore accepted missing independent journal")
+	}
+	o.ledgerPath, e = o.exportErasures(ctx, conn)
+	if e != nil {
+		t.Fatal(e)
+	}
 	if e = o.restore(ctx, conn, files[0], target, true); e != nil {
 		t.Fatal(e)
 	}
@@ -283,6 +291,101 @@ func TestBackupRestoreIntegration(t *testing.T) {
 	if e != nil || string(plain) != seed {
 		t.Fatal("restored MFA seed cannot be decrypted with preserved key")
 	}
+	var candidateID string
+	if e = conn.QueryRow(ctx, "SELECT id FROM candidates LIMIT 1").Scan(&candidateID); e != nil {
+		t.Fatal("missing source fixture candidate")
+	}
+	erasureTx, e := conn.Begin(ctx)
+	if e != nil {
+		t.Fatal("cannot begin erasure fixture")
+	}
+	if e = privacy.Redact(ctx, erasureTx, "00000000-0000-4000-8000-000000000001", candidateID); e == nil {
+		e = privacy.Record(ctx, erasureTx, "00000000-0000-4000-8000-000000000001", candidateID, "contacts")
+	}
+	if e != nil {
+		erasureTx.Rollback(ctx)
+		t.Fatal("cannot seed contact erasure")
+	}
+	if e = erasureTx.Commit(ctx); e != nil {
+		t.Fatal("cannot commit contact erasure")
+	}
+	if e = o.restore(ctx, conn, files[0], target+"_contacts", true); e == nil {
+		t.Fatal("accepted export missing newer source deletion")
+	}
+	o.ledgerPath, e = o.exportErasures(ctx, conn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = o.restore(ctx, conn, files[0], target+"_contacts", true); e != nil {
+		t.Fatal(e)
+	}
+	inspectCfg := cfg.Copy()
+	inspectCfg.Database = target + "_contacts"
+	inspect, e := pgx.ConnectConfig(ctx, inspectCfg)
+	if e != nil {
+		t.Fatal("cannot inspect contact recovery")
+	}
+	var redacted bool
+	e = inspect.QueryRow(ctx, "SELECT email IS NULL AND phone IS NULL AND erased_at IS NOT NULL FROM candidates WHERE id=$1", candidateID).Scan(&redacted)
+	if e != nil || !redacted {
+		inspect.Close(ctx)
+		t.Fatal("recovery resurrected erased contacts")
+	}
+	// A later hold on an already-redacted card must survive idempotent replay.
+	if _, e = inspect.Exec(ctx, "UPDATE candidates SET retention_hold=true,retention_hold_reason='Fixture later hold' WHERE id=$1", candidateID); e != nil {
+		inspect.Close(ctx)
+		t.Fatal("cannot set later hold fixture")
+	}
+	ledger, ledgerErr := o.loadErasureLedger(time.Time{})
+	if ledgerErr != nil {
+		inspect.Close(ctx)
+		t.Fatal(ledgerErr)
+	}
+	if e = reconcileErasures(ctx, conn, inspect, ledger); e != nil {
+		inspect.Close(ctx)
+		t.Fatal(e)
+	}
+	var held bool
+	e = inspect.QueryRow(ctx, "SELECT retention_hold FROM candidates WHERE id=$1", candidateID).Scan(&held)
+	inspect.Close(ctx)
+	if e != nil || !held {
+		t.Fatal("erasure replay removed a later retention hold")
+	}
+	if e != nil || !redacted {
+		t.Fatal("recovery resurrected erased contacts")
+	}
+	erasureTx, e = conn.Begin(ctx)
+	if e != nil {
+		t.Fatal("cannot begin full erasure fixture")
+	}
+	if e = privacy.Purge(ctx, erasureTx, "00000000-0000-4000-8000-000000000001", candidateID); e == nil {
+		e = privacy.Record(ctx, erasureTx, "00000000-0000-4000-8000-000000000001", candidateID, "all")
+	}
+	if e != nil {
+		erasureTx.Rollback(ctx)
+		t.Fatal("cannot seed full erasure")
+	}
+	if e = erasureTx.Commit(ctx); e != nil {
+		t.Fatal("cannot commit full erasure")
+	}
+	o.ledgerPath, e = o.exportErasures(ctx, conn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = o.restore(ctx, conn, files[0], target+"_all", true); e != nil {
+		t.Fatal(e)
+	}
+	inspectCfg.Database = target + "_all"
+	inspect, e = pgx.ConnectConfig(ctx, inspectCfg)
+	if e != nil {
+		t.Fatal("cannot inspect full recovery")
+	}
+	var remaining int
+	e = inspect.QueryRow(ctx, "SELECT count(*) FROM candidates").Scan(&remaining)
+	inspect.Close(ctx)
+	if e != nil || remaining != 0 {
+		t.Fatal("recovery resurrected fully erased candidate")
+	}
 	f, e := os.ReadFile(files[0])
 	if e != nil {
 		t.Fatal(e)
@@ -294,7 +397,7 @@ func TestBackupRestoreIntegration(t *testing.T) {
 		t.Fatal("restored corrupted archive")
 	}
 	var liveCandidates int
-	if e = conn.QueryRow(ctx, "SELECT count(*) FROM candidates").Scan(&liveCandidates); e != nil || liveCandidates != 1 {
+	if e = conn.QueryRow(ctx, "SELECT count(*) FROM candidates").Scan(&liveCandidates); e != nil || liveCandidates != 0 {
 		t.Fatal("backup changed source database")
 	}
 }

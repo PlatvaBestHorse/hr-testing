@@ -294,7 +294,7 @@ func exerciseGovernance(t *testing.T, ctx context.Context, owner *pgxpool.Pool, 
 			t.Fatal("contacts were not erased")
 		}
 		check(call("PATCH", "/api/v1/candidates/"+due, map[string]string{"full_name": "Resurrect", "status": "active"}, admin, true), 404)
-		check(call("PUT", "/api/v1/candidates/"+due+"/retention-hold", map[string]any{"hold": false}, admin, true), 404)
+		check(call("PUT", "/api/v1/candidates/"+due+"/retention-hold", map[string]any{"hold": false}, admin, true), 204)
 		check(call("GET", "/api/v1/invite/"+dueToken+"/attempt", nil, testSession{}, false), 404)
 		check(call("POST", "/api/v1/invitations", map[string]any{"candidate_id": due, "test_version_id": version, "expires_at": time.Now().Add(time.Hour)}, admin, true), 422)
 		w = call("GET", "/api/v1/results/"+attempt, nil, admin, false)

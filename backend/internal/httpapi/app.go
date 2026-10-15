@@ -127,6 +127,10 @@ func (a *App) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/results/{id}/export", a.protected(nil, a.exportResult))
 	mux.HandleFunc("GET /api/v1/results/{id}/images/{image}", a.protected(nil, a.resultImage))
 	admin := []string{"org_admin"}
+ mux.HandleFunc("POST /api/v1/candidates/{id}/erasure/preview", a.protected(admin, a.previewErasure))
+ mux.HandleFunc("POST /api/v1/erasure/previews/{id}/apply", a.protected(admin, a.applyErasure))
+ mux.HandleFunc("GET /api/v1/privacy", a.protected(admin, a.getPrivacy))
+ mux.HandleFunc("PATCH /api/v1/privacy", a.protected(admin, a.savePrivacy))
 	mux.HandleFunc("POST /api/v1/import/questions/preview", a.protected(admin, a.previewImport))
 	mux.HandleFunc("POST /api/v1/import/questions/apply", a.protected(admin, a.applyImport))
 	mux.HandleFunc("GET /api/v1/audit", a.protected(admin, a.listAudit))

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Кадровый тестер — HR API
-  version: 0.10.0
+  version: 0.11.0
   description: HR API, прохождение, отчёты, аудит и контролируемые правила хранения
     данных.
 paths:
@@ -1618,6 +1618,12 @@ paths:
           $ref: '#/components/responses/Error422'
         '500':
           $ref: '#/components/responses/Error500'
+        '503':
+          description: При HTTPS организация ещё не утвердила документы обработки данных
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
           description: 'Лимит клиентского IP: по умолчанию 600 запросов в минуту в API; Nginx дополнительно
             ограничивает всплески 20 запросами/с с burst 100. За NAT IP общий.'
@@ -3714,6 +3720,168 @@ paths:
               schema:
                 $ref: '#/components/schemas/ImportFailure'
 
+  /api/v1/candidates/{id}/erasure/preview:
+    post:
+      operationId: previewCandidateErasure
+      summary: Предпросмотр полного удаления кандидата
+      description: Только org_admin своей организации. Считает весь граф, включая активные
+        попытки и комментарии. Ничего не удаляет; срок 15 минут. Запрет хранения виден
+        в ответе.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErasurePreview'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '500':
+          $ref: '#/components/responses/Error500'
+  /api/v1/erasure/previews/{id}/apply:
+    post:
+      operationId: applyCandidateErasure
+      summary: Полное удаление после подтверждения
+      description: Только org_admin, создавший предпросмотр, с повторной проверкой текущих
+        прав. Запрет хранения блокирует удаление. Изменения графа/истечение срока дают
+        409. Удаляются все прохождения, ответы, комментарии и ссылки. Повтор ID возвращает
+        ту же квитанцию. Реестр содержит только UUID, scope и время.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - confirmation
+              properties:
+                confirmation:
+                  type: string
+                  const: УДАЛИТЬ КАНДИДАТА
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErasureReceipt'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+  /api/v1/privacy:
+    get:
+      operationId: getPrivacyDocument
+      summary: Текущие согласие и политика организации
+      description: Только org_admin. revision=0 — тестовые тексты, approved=false.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentDocument'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+    patch:
+      operationId: publishPrivacyDocument
+      summary: Создать неизменяемую версию документов
+      description: Только org_admin своей организации, Origin/CSRF, актуальная base_revision.
+        При approved=true обязательны наименование оператора и рабочая email-почта.
+        Утверждение юридического содержания — ответственность организации.
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentDocumentInput'
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentDocument'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
 components:
   responses:
     Ready:
@@ -3812,6 +3980,123 @@ components:
       description: HttpOnly cookie. Изменяющие запросы также требуют Origin и X-CSRF-Token
         из /me.
   schemas:
+    ConsentDocument:
+      type: object
+      additionalProperties: false
+      properties:
+        operator_name:
+          type: string
+          maxLength: 250
+        contact:
+          type: string
+          maxLength: 320
+        consent_text:
+          type: string
+          maxLength: 20000
+        policy_text:
+          type: string
+          maxLength: 20000
+        approved:
+          type: boolean
+        revision:
+          type: integer
+          minimum: 0
+        id:
+          type: string
+          description: Пустая строка у тестового текста revision=0
+      required:
+      - operator_name
+      - contact
+      - consent_text
+      - policy_text
+      - approved
+      - revision
+      - id
+    ConsentDocumentInput:
+      type: object
+      additionalProperties: false
+      properties:
+        operator_name:
+          type: string
+          maxLength: 250
+        contact:
+          type: string
+          maxLength: 320
+        consent_text:
+          type: string
+          maxLength: 20000
+        policy_text:
+          type: string
+          maxLength: 20000
+        approved:
+          type: boolean
+        base_revision:
+          type: integer
+          minimum: 0
+      required:
+      - consent_text
+      - policy_text
+      - base_revision
+    ErasurePreview:
+      type: object
+      additionalProperties: false
+      properties:
+        invitations:
+          type: integer
+          minimum: 0
+        attempts:
+          type: integer
+          minimum: 0
+        answers:
+          type: integer
+          minimum: 0
+        comments:
+          type: integer
+          minimum: 0
+        active_attempts:
+          type: integer
+          minimum: 0
+        id:
+          type: string
+          format: uuid
+        candidate_id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        retention_hold:
+          type: boolean
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - invitations
+      - attempts
+      - answers
+      - comments
+      - active_attempts
+      - id
+      - candidate_id
+      - full_name
+      - retention_hold
+      - expires_at
+    ErasureReceipt:
+      type: object
+      additionalProperties: false
+      required:
+      - candidate_id
+      - erased
+      - completed_at
+      properties:
+        candidate_id:
+          type: string
+          format: uuid
+        erased:
+          type: boolean
+          const: true
+        completed_at:
+          type: string
+          format: date-time
     Error:
       type: object
       additionalProperties: false
@@ -4645,6 +4930,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        consent_document:
+          $ref: '#/components/schemas/ConsentDocument'
         title:
           type: string
         description:
@@ -4666,6 +4953,7 @@ components:
           type: string
           format: date-time
       required:
+      - consent_document
       - title
       - description
       - organization_name
@@ -4931,6 +5219,10 @@ components:
         consent:
           type: boolean
           const: true
+        consent_revision:
+          type: integer
+          minimum: 0
+          description: Версия из consent_document; обязательна после первой публикации документов. Устаревшая версия отклоняется для новой попытки. При HTTPS неутверждённые документы блокируют начало (503).
         new_attempt:
           type: boolean
           default: false

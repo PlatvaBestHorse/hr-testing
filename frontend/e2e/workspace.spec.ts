@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 const imageFixture = { name: 'question.png', mimeType: 'image/png', buffer: readFileSync(new URL('./fixtures/question.png', import.meta.url)) }
-const credentials = JSON.parse(readFileSync(new URL('../../.env.admin.json', import.meta.url), 'utf8'))
+const credentials = JSON.parse(readFileSync(process.env.E2E_CREDENTIALS_FILE || new URL('../../.env.admin.json', import.meta.url), 'utf8'))
 
 test('HR workflow: invitation, autosave, recovery and scored completion', async ({ page, browser }, info) => {
   await page.goto('/dashboard')

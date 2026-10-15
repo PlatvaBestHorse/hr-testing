@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"github.com/PlatvaBestHorse/hr-testing/backend/internal/identity"
+	"github.com/PlatvaBestHorse/hr-testing/backend/internal/privacy"
 	"net/http"
 	"strings"
 	"time"
@@ -105,6 +106,12 @@ func (a *App) saveCandidate(w http.ResponseWriter, r *http.Request, p principal,
 		return
 	}
 	defer tx.Rollback(context.Background())
+	if !create {
+		if err = privacy.LockCandidate(r.Context(), tx, p.OrganizationID, id); err != nil {
+			a.failure(w, err)
+			return
+		}
+	}
 	var c candidateRecord
 	action := "candidate.create"
 	if create {

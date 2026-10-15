@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-const credentials = JSON.parse(readFileSync(new URL('../../.env.admin.json', import.meta.url), 'utf8'))
+const credentials = JSON.parse(readFileSync(process.env.E2E_CREDENTIALS_FILE || new URL('../../.env.admin.json', import.meta.url), 'utf8'))
 const fixture = JSON.parse(readFileSync(new URL('../../backend/internal/httpapi/testdata/candidate-tester-v1.json', import.meta.url), 'utf8'))
 test('JSON import: preview, explicit apply and duplicate detection', async ({ page }, info) => {
   const bank = structuredClone(fixture), suffix = '_' + info.project.name + '_' + Date.now()

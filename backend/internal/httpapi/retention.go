@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/PlatvaBestHorse/hr-testing/backend/internal/privacy"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -374,6 +375,9 @@ func (a *App) applyRetention(w http.ResponseWriter, r *http.Request, p principal
 	write(w, 200, result)
 }
 func (a *App) eraseContacts(ctx context.Context, tx pgx.Tx, p principal, id string, cutoff, now time.Time) (bool, error) {
+	if err := privacy.LockCandidate(ctx, tx, p.OrganizationID, id); err != nil {
+		return false, err
+	}
 	// Invitation -> candidate order avoids deadlocks with start/submit/expiry.
 	rows, err := tx.Query(ctx, `SELECT id FROM invitations WHERE organization_id=$1 AND candidate_id=$2 ORDER BY id FOR UPDATE`, p.OrganizationID, id)
 	if err != nil {
@@ -405,15 +409,9 @@ func (a *App) eraseContacts(ctx context.Context, tx pgx.Tx, p principal, id stri
 	if err != nil || !eligible {
 		return false, err
 	}
-	_, err = tx.Exec(ctx, `UPDATE candidates SET full_name='Контактные данные удалены',email=NULL,phone=NULL,status='archived',erased_at=clock_timestamp(),updated_at=clock_timestamp(),retention_hold=false,retention_hold_reason='' WHERE organization_id=$1 AND id=$2`, p.OrganizationID, id)
+	err = privacy.Redact(ctx, tx, p.OrganizationID, id)
 	if err == nil {
-		_, err = tx.Exec(ctx, `UPDATE invitations SET status='revoked' WHERE organization_id=$1 AND candidate_id=$2`, p.OrganizationID, id)
-	}
-	if err == nil {
-		_, err = tx.Exec(ctx, `UPDATE outbound_messages m SET recipient='redacted',status=CASE WHEN status IN ('pending','failed') THEN 'cancelled' ELSE status END WHERE m.organization_id=$1 AND EXISTS(SELECT 1 FROM invitations i WHERE i.organization_id=m.organization_id AND i.id=m.invitation_id AND i.candidate_id=$2)`, p.OrganizationID, id)
-	}
-	if err == nil {
-		_, err = tx.Exec(ctx, `DELETE FROM candidate_consents WHERE organization_id=$1 AND candidate_id=$2`, p.OrganizationID, id)
+		err = privacy.Record(ctx, tx, p.OrganizationID, id, "contacts")
 	}
 	if err == nil {
 		err = a.audit(ctx, tx, p, "candidate.contacts.erase", "candidate", id)
@@ -447,8 +445,19 @@ func (a *App) setRetentionHold(w http.ResponseWriter, r *http.Request, p princip
 		return
 	}
 	defer tx.Rollback(context.Background())
+	if err = lockRetentionOrg(r.Context(), tx, p.OrganizationID); err != nil {
+		a.failure(w, err)
+		return
+	}
+	if !a.confirmRetentionAdmin(w, r, p, tx) {
+		return
+	}
+	if err = privacy.LockCandidate(r.Context(), tx, p.OrganizationID, id); err != nil {
+		a.failure(w, err)
+		return
+	}
 	var key string
-	err = tx.QueryRow(r.Context(), `UPDATE candidates SET retention_hold=$3,retention_hold_reason=$4 WHERE organization_id=$1 AND id=$2 AND erased_at IS NULL RETURNING id`, p.OrganizationID, id, in.Hold, in.Reason).Scan(&key)
+	err = tx.QueryRow(r.Context(), `UPDATE candidates SET retention_hold=$3,retention_hold_reason=$4 WHERE organization_id=$1 AND id=$2 RETURNING id`, p.OrganizationID, id, in.Hold, in.Reason).Scan(&key)
 	if err == nil {
 		_, err = tx.Exec(r.Context(), `INSERT INTO audit_events(organization_id,actor_user_id,action,object_type,object_id,details) VALUES($1,$2,'candidate.retention_hold','candidate',$3,jsonb_build_object('hold',$4::boolean))`, p.OrganizationID, p.UserID, id, in.Hold)
 	}
@@ -462,7 +471,7 @@ func (a *App) setRetentionHold(w http.ResponseWriter, r *http.Request, p princip
 	w.WriteHeader(204)
 }
 func (a *App) retentionHolds(w http.ResponseWriter, r *http.Request, p principal) {
-	rows, err := a.Pool.Query(r.Context(), `SELECT id,full_name,retention_hold_reason FROM candidates WHERE organization_id=$1 AND retention_hold AND erased_at IS NULL ORDER BY full_name,id LIMIT 100`, p.OrganizationID)
+	rows, err := a.Pool.Query(r.Context(), `SELECT id,full_name,retention_hold_reason FROM candidates WHERE organization_id=$1 AND retention_hold ORDER BY full_name,id LIMIT 100`, p.OrganizationID)
 	if err != nil {
 		a.failure(w, err)
 		return
