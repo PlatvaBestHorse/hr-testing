@@ -1,14 +1,20 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCookieAndOriginConfig(t *testing.T) {
+	t.Setenv("AUTH_ENCRYPTION_KEY", strings.Repeat("ab", 32))
+	t.Setenv("APP_PUBLIC_URL", "")
+	t.Setenv("AUTH_MAIL_MODE", "disabled")
 	t.Setenv("DATABASE_URL", "postgres://fixture")
 	t.Setenv("COOKIE_SECURE", "true")
 	t.Setenv("APP_ORIGINS", "https://hr.example")
 	c, err := Load()
 	if err != nil || !c.SecureCookie {
-		t.Fatal("HTTPS mode must use secure cookie")
+		t.Fatal("HTTPS mode must use secure cookie:", err)
 	}
 	t.Setenv("APP_ORIGINS", "http://hr.example")
 	if _, err = Load(); err == nil {

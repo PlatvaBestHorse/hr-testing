@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { Library, Plus, Search, ArrowRight, Tags } from '@lucide/vue'
-import { api } from './session'
+import { api, session } from './session'
 import Categories from './Categories.vue'
 interface Category { id: string; name: string; description: string }
 interface Item { id: string; body: string; type: string; category_name: string; status: string; version_no: number; difficulty: number }
@@ -24,7 +24,7 @@ watch([categoryId, status], applyFilters)
 onMounted(() => { load(); loadCategories() })
 </script>
 <template>
-  <div class="page-heading"><div><p class="eyebrow">БАНК ВОПРОСОВ</p><h1>Вопросы для сильной команды</h1><p class="subtitle">Категории, правильные ответы и история каждой редакции.</p></div><RouterLink to="/questions/new" class="primary-link"><Plus :size="18" />Добавить вопрос</RouterLink></div>
+  <div class="page-heading"><div><p class="eyebrow">БАНК ВОПРОСОВ</p><h1>Вопросы для сильной команды</h1><p class="subtitle">Категории, правильные ответы и история каждой редакции.</p></div><div class="action-group"><RouterLink v-if="session.user?.role === 'org_admin'" to="/questions/import" class="secondary-button">Импорт JSON</RouterLink><RouterLink to="/questions/new" class="primary-link"><Plus :size="18" />Добавить вопрос</RouterLink></div></div>
   <div class="question-toolbar">
     <form class="search-field" @submit.prevent="applyFilters"><Search :size="18" /><input v-model="search" aria-label="Поиск вопросов" maxlength="200" placeholder="Найти вопрос…" /><button class="text-button" type="submit">Найти</button></form>
     <select v-model="categoryId" aria-label="Фильтр по категории"><option value="">Все категории</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option></select>

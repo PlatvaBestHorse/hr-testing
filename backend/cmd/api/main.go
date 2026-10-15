@@ -29,6 +29,12 @@ func main() {
 	}
 	defer p.Close()
 	app := httpapi.NewApp(p, c.SecureCookie, c.Origins)
+	app.AuthKey = c.AuthKey
+	app.PublicURL = c.PublicURL
+	app.MailMode = c.MailMode
+	if c.MailMode != "disabled" {
+		app.SendAuthMail = c.MailSender.Send
+	}
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	workerDone := make(chan struct{})
 	go func() {
@@ -47,6 +53,23 @@ func main() {
 		}
 	}()
 	defer func() { cancelWorker(); <-workerDone }()
+	mailDone := make(chan struct{})
+	go func() {
+		defer close(mailDone)
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			if err := app.DeliverAuthMail(workerCtx); err != nil && workerCtx.Err() == nil {
+				slog.Error("account mail processing failed")
+			}
+			select {
+			case <-workerCtx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	defer func() { cancelWorker(); <-mailDone }()
 	s := &http.Server{Addr: c.Address, Handler: httpapi.Router(database.Readiness{Pool: p}, app), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	done := make(chan error, 1)
 	go func() { done <- s.ListenAndServe() }()

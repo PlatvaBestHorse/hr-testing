@@ -14,6 +14,7 @@ type questionOption struct {
 	ID      string `json:"id,omitempty"`
 	Label   string `json:"label"`
 	Correct bool   `json:"is_correct"`
+	ImageID string `json:"image_id"`
 }
 type questionInput struct {
 	CategoryID  string           `json:"category_id"`
@@ -22,6 +23,7 @@ type questionInput struct {
 	Body        string           `json:"body"`
 	Passage     string           `json:"passage"`
 	Explanation string           `json:"explanation"`
+	ImageID     string           `json:"image_id"`
 	Options     []questionOption `json:"options"`
 	BaseVersion int              `json:"base_version_no"`
 }
@@ -44,6 +46,7 @@ type question struct {
 	Body            string           `json:"body"`
 	Passage         string           `json:"passage"`
 	Explanation     string           `json:"explanation"`
+	ImageID         string           `json:"image_id"`
 	CreatedAt       time.Time        `json:"created_at"`
 	Options         []questionOption `json:"options"`
 	Versions        []versionInfo    `json:"versions"`
@@ -53,6 +56,10 @@ func validateQuestion(in *questionInput) string {
 	in.Body = strings.TrimSpace(in.Body)
 	in.Passage = strings.TrimSpace(in.Passage)
 	in.Explanation = strings.TrimSpace(in.Explanation)
+	if in.ImageID != "" && !uuid(in.ImageID) {
+		return "Некорректное изображение вопроса"
+	}
+	in.ImageID = strings.ToLower(in.ImageID)
 	if in.CategoryID != "" && !uuid(in.CategoryID) {
 		return "Выберите доступную категорию"
 	}
@@ -74,6 +81,10 @@ func validateQuestion(in *questionInput) string {
 	correct := 0
 	seen := map[string]bool{}
 	for i := range in.Options {
+		if in.Options[i].ImageID != "" && !uuid(in.Options[i].ImageID) {
+			return "Некорректное изображение варианта ответа"
+		}
+		in.Options[i].ImageID = strings.ToLower(in.Options[i].ImageID)
 		in.Options[i].Label = strings.TrimSpace(in.Options[i].Label)
 		label := in.Options[i].Label
 		if !validText(label, 2000) {
@@ -108,11 +119,11 @@ func validateQuestion(in *questionInput) string {
 }
 
 const questionColumns = `q.id,coalesce(q.category_id::text,''),coalesce(c.name,''),q.difficulty,q.status,
-v.id,v.version_no,v.status,v.type,v.body,coalesce(v.passage,''),coalesce(v.explanation,''),v.created_at`
+v.id,v.version_no,v.status,v.type,v.body,coalesce(v.passage,''),coalesce(v.explanation,''),v.created_at,coalesce(v.image_id::text,'')`
 
 func scanQuestion(row interface{ Scan(...any) error }) (question, error) {
 	q := question{Options: []questionOption{}, Versions: []versionInfo{}}
-	err := row.Scan(&q.ID, &q.CategoryID, &q.CategoryName, &q.Difficulty, &q.Status, &q.VersionID, &q.VersionNo, &q.VersionStatus, &q.Type, &q.Body, &q.Passage, &q.Explanation, &q.CreatedAt)
+	err := row.Scan(&q.ID, &q.CategoryID, &q.CategoryName, &q.Difficulty, &q.Status, &q.VersionID, &q.VersionNo, &q.VersionStatus, &q.Type, &q.Body, &q.Passage, &q.Explanation, &q.CreatedAt, &q.ImageID)
 	q.LatestVersionNo = q.VersionNo
 	return q, err
 }
@@ -187,14 +198,14 @@ LEFT JOIN categories c ON c.organization_id=q.organization_id AND c.id=q.categor
 		a.failure(w, err)
 		return
 	}
-	rows, err := a.Pool.Query(r.Context(), `SELECT id,label,is_correct FROM question_options WHERE organization_id=$1 AND question_version_id=$2 ORDER BY position`, p.OrganizationID, q.VersionID)
+	rows, err := a.Pool.Query(r.Context(), `SELECT id,label,is_correct,coalesce(image_id::text,'') FROM question_options WHERE organization_id=$1 AND question_version_id=$2 ORDER BY position`, p.OrganizationID, q.VersionID)
 	if err != nil {
 		a.failure(w, err)
 		return
 	}
 	for rows.Next() {
 		var option questionOption
-		if err = rows.Scan(&option.ID, &option.Label, &option.Correct); err != nil {
+		if err = rows.Scan(&option.ID, &option.Label, &option.Correct, &option.ImageID); err != nil {
 			rows.Close()
 			a.failure(w, err)
 			return
@@ -255,6 +266,25 @@ func (a *App) saveQuestion(w http.ResponseWriter, r *http.Request, p principal, 
 		return
 	}
 	defer tx.Rollback(context.Background())
+	imageIDs := []string{}
+	imageSet := map[string]bool{}
+	for _, img := range append([]questionOption{{ImageID: in.ImageID}}, in.Options...) {
+		if img.ImageID != "" && !imageSet[img.ImageID] {
+			imageSet[img.ImageID] = true
+			imageIDs = append(imageIDs, img.ImageID)
+		}
+	}
+	if len(imageIDs) > 0 {
+		var found int
+		if err = tx.QueryRow(r.Context(), "SELECT count(*) FROM attachments WHERE organization_id=$1 AND id=ANY($2::uuid[]) AND data IS NOT NULL", p.OrganizationID, imageIDs).Scan(&found); err != nil {
+			a.failure(w, err)
+			return
+		}
+		if found != len(imageIDs) {
+			problem(w, 422, "invalid_image", "Изображение не найдено в вашей организации")
+			return
+		}
+	}
 	if in.CategoryID != "" {
 		var found bool
 		err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM categories WHERE organization_id=$1 AND id=$2)`, p.OrganizationID, in.CategoryID).Scan(&found)
@@ -305,7 +335,7 @@ func (a *App) saveQuestion(w http.ResponseWriter, r *http.Request, p principal, 
 		return
 	}
 	var versionID string
-	err = tx.QueryRow(r.Context(), `INSERT INTO question_versions(organization_id,question_id,version_no,type,body,passage,explanation) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, p.OrganizationID, id, number, in.Type, in.Body, in.Passage, in.Explanation).Scan(&versionID)
+	err = tx.QueryRow(r.Context(), `INSERT INTO question_versions(organization_id,question_id,version_no,type,body,passage,explanation,image_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, p.OrganizationID, id, number, in.Type, in.Body, in.Passage, in.Explanation, optionalUUID(in.ImageID)).Scan(&versionID)
 	if err != nil {
 		a.failure(w, err)
 		return
@@ -315,7 +345,7 @@ func (a *App) saveQuestion(w http.ResponseWriter, r *http.Request, p principal, 
 		if in.Type == "verbal_tfu" {
 			key = []string{"true", "false", "unknown"}[i]
 		}
-		if _, err = tx.Exec(r.Context(), `INSERT INTO question_options(organization_id,question_version_id,option_key,label,is_correct,position) VALUES ($1,$2,$3,$4,$5,$6)`, p.OrganizationID, versionID, key, option.Label, option.Correct, i+1); err != nil {
+		if _, err = tx.Exec(r.Context(), `INSERT INTO question_options(organization_id,question_version_id,option_key,label,is_correct,position,image_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`, p.OrganizationID, versionID, key, option.Label, option.Correct, i+1, optionalUUID(option.ImageID)); err != nil {
 			a.failure(w, err)
 			return
 		}

@@ -14,6 +14,7 @@ type reportOption struct {
 	Label    string `json:"label"`
 	Selected bool   `json:"selected"`
 	Correct  bool   `json:"is_correct"`
+	ImageID  string `json:"image_id"`
 }
 type reportItem struct {
 	ID             string         `json:"id"`
@@ -21,6 +22,7 @@ type reportItem struct {
 	Type           string         `json:"type"`
 	Body           string         `json:"body"`
 	Passage        string         `json:"passage"`
+	ImageID        string         `json:"image_id"`
 	Explanation    string         `json:"explanation"`
 	Version        int            `json:"question_version_no"`
 	CategoryID     string         `json:"category_id"`
@@ -68,12 +70,12 @@ func readReport(ctx context.Context, tx pgx.Tx, p principal, id string) (attempt
 	if err = tx.QueryRow(ctx, `SELECT a.deadline_at,v.pass_percent::text FROM attempts a JOIN test_versions v ON v.organization_id=a.organization_id AND v.id=a.test_version_id WHERE a.organization_id=$1 AND a.id=$2`, p.OrganizationID, id).Scan(&out.Deadline, &out.PassPercent); err != nil {
 		return out, err
 	}
-	rows, err := tx.Query(ctx, `SELECT ai.id,ai.position,q.type,q.body,coalesce(q.passage,''),coalesce(q.explanation,''),q.version_no,
+	rows, err := tx.Query(ctx, `SELECT ai.id,ai.position,q.type,q.body,coalesce(q.passage,''),coalesce(q.image_id::text,''),coalesce(q.explanation,''),q.version_no,
  coalesce(ai.category_snapshot->>'id',c.id::text,''),coalesce(ai.category_snapshot->>'name',c.name,'Без категории'),ai.category_snapshot IS NOT NULL,
  coalesce(aa.selected_option_ids,'{}'::uuid[]), (ti.points*100)::bigint,
  ARRAY(SELECT o.id FROM question_options o WHERE o.organization_id=ti.organization_id AND o.question_version_id=ti.question_version_id AND o.is_correct ORDER BY o.id)
  = ARRAY(SELECT x FROM unnest(coalesce(aa.selected_option_ids,'{}'::uuid[])) x ORDER BY x),
- (SELECT jsonb_agg(jsonb_build_object('id',o.id,'label',o.label,'selected',o.id=ANY(coalesce(aa.selected_option_ids,'{}'::uuid[])),'is_correct',o.is_correct) ORDER BY ord.n)
+ (SELECT jsonb_agg(jsonb_build_object('id',o.id,'label',o.label,'image_id',coalesce(o.image_id::text,''),'selected',o.id=ANY(coalesce(aa.selected_option_ids,'{}'::uuid[])),'is_correct',o.is_correct) ORDER BY ord.n)
  FROM jsonb_array_elements_text(ai.option_order) WITH ORDINALITY ord(id,n) JOIN question_options o ON o.organization_id=ai.organization_id AND o.id=ord.id::uuid)
  FROM attempt_items ai JOIN test_items ti ON ti.organization_id=ai.organization_id AND ti.id=ai.test_item_id
  JOIN question_versions q ON q.organization_id=ti.organization_id AND q.id=ti.question_version_id
@@ -95,7 +97,7 @@ func readReport(ctx context.Context, tx pgx.Tx, p principal, id string) (attempt
 		var item reportItem
 		var selected []string
 		var max int64
-		if err = rows.Scan(&item.ID, &item.Position, &item.Type, &item.Body, &item.Passage, &item.Explanation, &item.Version, &item.CategoryID, &item.CategoryName, &item.CategoryFrozen, &selected, &max, &item.Correct, &item.Options); err != nil {
+		if err = rows.Scan(&item.ID, &item.Position, &item.Type, &item.Body, &item.Passage, &item.ImageID, &item.Explanation, &item.Version, &item.CategoryID, &item.CategoryName, &item.CategoryFrozen, &selected, &max, &item.Correct, &item.Options); err != nil {
 			return out, err
 		}
 		item.Answered = len(selected) > 0

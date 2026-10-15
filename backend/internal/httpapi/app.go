@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/PlatvaBestHorse/hr-testing/backend/internal/identity"
+	"github.com/PlatvaBestHorse/hr-testing/backend/internal/maildelivery"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,12 +25,18 @@ type App struct {
 	SecureCookie  bool
 	Origins       map[string]bool
 	passwordSlots chan struct{}
+	imageSlots    chan struct{}
+	importSlots   chan struct{}
 	dummyHash     string
+	AuthKey       []byte
+	PublicURL     string
+	MailMode      string
+	SendAuthMail  func(context.Context, maildelivery.Message) error
 }
 
 func NewApp(pool *pgxpool.Pool, secure bool, origins []string) *App {
 	dummy, _ := identity.HashPassword("unused-dummy-password-for-timing")
-	a := &App{Pool: pool, SecureCookie: secure, Origins: map[string]bool{}, passwordSlots: make(chan struct{}, 4), dummyHash: dummy}
+	a := &App{Pool: pool, SecureCookie: secure, Origins: map[string]bool{}, passwordSlots: make(chan struct{}, 4), imageSlots: make(chan struct{}, 2), importSlots: make(chan struct{}, 2), dummyHash: dummy}
 	for _, origin := range origins {
 		a.Origins[strings.TrimSpace(origin)] = true
 	}
@@ -48,8 +56,25 @@ type principal struct {
 func (a *App) register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.protected(nil, a.logout))
+	mux.HandleFunc("GET /api/v1/auth/options", a.authOptions)
+	mux.HandleFunc("POST /api/v1/auth/recovery/request", a.requestPasswordRecovery)
+	mux.HandleFunc("POST /api/v1/auth/recovery/complete", a.completePasswordRecovery)
+	mux.HandleFunc("GET /api/v1/security", a.protected(nil, a.getSecurity))
+	mux.HandleFunc("POST /api/v1/security/password", a.protected(nil, a.changePassword))
+	mux.HandleFunc("POST /api/v1/security/mfa/setup", a.protected(nil, a.setupMFA))
+	mux.HandleFunc("POST /api/v1/security/mfa/confirm", a.protected(nil, a.confirmMFA))
+	mux.HandleFunc("POST /api/v1/security/mfa/disable", a.protected(nil, a.disableMFA))
+	mux.HandleFunc("POST /api/v1/security/mfa/recovery-codes", a.protected(nil, a.regenerateCodes))
 	mux.HandleFunc("GET /api/v1/me", a.protected(nil, func(w http.ResponseWriter, r *http.Request, p principal) { write(w, 200, p) }))
+	mux.HandleFunc("GET /api/v1/organization", a.protected(nil, a.getOrganization))
+	mux.HandleFunc("PATCH /api/v1/organization", a.protected([]string{"org_admin"}, a.saveOrganization))
+	mux.HandleFunc("POST /api/v1/team/invitations", a.protected([]string{"org_admin"}, a.inviteMember))
+	mux.HandleFunc("POST /api/v1/team/{id}/invitation", a.protected([]string{"org_admin"}, a.resendMemberInvitation))
 	edit := []string{"org_admin", "recruiter"}
+	mux.HandleFunc("POST /api/v1/images", a.protected(edit, a.uploadImage))
+	mux.HandleFunc("GET /api/v1/images", a.protected(edit, a.unusedImages))
+	mux.HandleFunc("GET /api/v1/images/{image}", a.protected(edit, a.hrImage))
+	mux.HandleFunc("DELETE /api/v1/images/{image}", a.protected(edit, a.deleteImage))
 	mux.HandleFunc("GET /api/v1/categories", a.protected(edit, a.listCategories))
 	mux.HandleFunc("POST /api/v1/categories", a.protected(edit, a.createCategory))
 	mux.HandleFunc("PATCH /api/v1/categories/{id}", a.protected(edit, a.updateCategory))
@@ -86,13 +111,21 @@ func (a *App) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/invite/{token}", a.publicInvitation)
 	mux.HandleFunc("POST /api/v1/invite/{token}/start", a.candidateRoute(a.startAttempt))
 	mux.HandleFunc("GET /api/v1/invite/{token}/attempt", a.candidateRoute(a.getAttempt))
+	mux.HandleFunc("GET /api/v1/invite/{token}/attempts/{id}/images/{image}", a.candidateRoute(a.candidateImage))
 	mux.HandleFunc("PUT /api/v1/invite/{token}/attempts/{id}/items/{item}/answer", a.candidateRoute(a.saveAnswer))
 	mux.HandleFunc("POST /api/v1/invite/{token}/attempts/{id}/submit", a.candidateRoute(a.submitAttempt))
 	mux.HandleFunc("GET /api/v1/results", a.protected(nil, a.listResults))
 	mux.HandleFunc("GET /api/v1/results/export", a.protected(nil, a.exportResults))
 	mux.HandleFunc("GET /api/v1/results/{id}", a.protected(nil, a.getResult))
+	mux.HandleFunc("GET /api/v1/results/{id}/comments", a.protected(nil, a.listComments))
+	mux.HandleFunc("POST /api/v1/results/{id}/comments", a.protected(nil, a.saveComment))
+	mux.HandleFunc("PATCH /api/v1/results/{id}/comments/{comment}", a.protected(nil, a.saveComment))
+	mux.HandleFunc("DELETE /api/v1/results/{id}/comments/{comment}", a.protected(nil, a.saveComment))
 	mux.HandleFunc("GET /api/v1/results/{id}/export", a.protected(nil, a.exportResult))
+	mux.HandleFunc("GET /api/v1/results/{id}/images/{image}", a.protected(nil, a.resultImage))
 	admin := []string{"org_admin"}
+	mux.HandleFunc("POST /api/v1/import/questions/preview", a.protected(admin, a.previewImport))
+	mux.HandleFunc("POST /api/v1/import/questions/apply", a.protected(admin, a.applyImport))
 	mux.HandleFunc("GET /api/v1/audit", a.protected(admin, a.listAudit))
 	mux.HandleFunc("GET /api/v1/audit/options", a.protected(admin, a.auditOptions))
 	mux.HandleFunc("GET /api/v1/retention", a.protected(admin, a.getRetention))

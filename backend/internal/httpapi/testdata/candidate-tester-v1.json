@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "questions": [
+    {"id":"fixture_q1","type":"single","category":"Импорт: числа","difficulty":"Лёгкий","passage":"","text":"2 + 2 = ?","choices":[{"id":"wrong","text":"3"},{"id":"right","text":"4"}],"correct":"right","explanation":"Два плюс два — четыре."},
+    {"id":"fixture_q2","type":"single","category":"Импорт: числа","difficulty":"Сложный","passage":"Текст <script>не исполнять</script>","text":"Продолжите: 3, 6, 12, ?","choices":[{"id":"X","text":"24"},{"id":"Y","text":"18"}],"correct":"X","explanation":"Удвоение."}
+  ],
+  "tests": [
+    {"id":"fixture_test_published","title":"Проверка импорта: опубликованный","description":"Тестовый набор","minutes":20,"passing":70.25,"questionIds":["fixture_q2","fixture_q1"],"shuffle":true,"published":true,"showScore":false},
+    {"id":"fixture_test_draft","title":"Проверка импорта: черновик","description":"Не публиковать","minutes":1,"passing":0,"questionIds":["fixture_q1"],"shuffle":false,"published":false,"showScore":true}
+  ]
+}

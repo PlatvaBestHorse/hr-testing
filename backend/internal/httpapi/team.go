@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/PlatvaBestHorse/hr-testing/backend/internal/identity"
 )
@@ -40,6 +41,12 @@ func (a *App) listTeam(w http.ResponseWriter, r *http.Request, p principal) {
 }
 
 func (a *App) createMember(w http.ResponseWriter, r *http.Request, p principal) {
+	a.createTeamMember(w, r, p, false)
+}
+func (a *App) inviteMember(w http.ResponseWriter, r *http.Request, p principal) {
+	a.createTeamMember(w, r, p, true)
+}
+func (a *App) createTeamMember(w http.ResponseWriter, r *http.Request, p principal, invite bool) {
 	var in struct {
 		Email    string `json:"email"`
 		Name     string `json:"display_name"`
@@ -54,6 +61,22 @@ func (a *App) createMember(w http.ResponseWriter, r *http.Request, p principal) 
 	if !identity.ValidEmail(in.Email) || !validText(in.Name, 250) || !roleAllowed(in.Role) {
 		problem(w, 422, "validation_error", "Проверьте имя, почту и роль сотрудника")
 		return
+	}
+	if invite {
+		if a.SendAuthMail == nil || len(a.AuthKey) != 32 {
+			problem(w, 503, "mail_unavailable", "Отправка приглашений не настроена")
+			return
+		}
+		if in.Password != "" {
+			problem(w, 422, "invalid_invitation", "Пароль задаёт приглашённый сотрудник")
+			return
+		}
+		generated, err := randomToken()
+		if err != nil {
+			a.failure(w, err)
+			return
+		}
+		in.Password = generated
 	}
 	hash, err := identity.HashPassword(in.Password)
 	if err != nil {
@@ -77,11 +100,28 @@ func (a *App) createMember(w http.ResponseWriter, r *http.Request, p principal) 
 		a.failure(w, err)
 		return
 	}
-	if _, err = tx.Exec(r.Context(), `INSERT INTO memberships(organization_id,user_id,role) VALUES ($1,$2,$3)`, p.OrganizationID, id, in.Role); err != nil {
+	status := "active"
+	action := "team.member.create"
+	if invite {
+		status = "invited"
+		action = "team.member.invite"
+	}
+	if _, err = tx.Exec(r.Context(), `INSERT INTO memberships(organization_id,user_id,role,status) VALUES ($1,$2,$3,$4)`, p.OrganizationID, id, in.Role, status); err != nil {
 		a.failure(w, err)
 		return
 	}
-	if err = a.audit(r.Context(), tx, p, "team.member.create", "user", id); err != nil {
+	if invite {
+		token, e := randomToken()
+		if e != nil {
+			a.failure(w, e)
+			return
+		}
+		if err = a.queueAccountToken(r.Context(), tx, id, p.OrganizationID, in.Email, hash, token, "staff_invite", 48*time.Hour); err != nil {
+			a.failure(w, err)
+			return
+		}
+	}
+	if err = a.audit(r.Context(), tx, p, action, "user", id); err != nil {
 		a.failure(w, err)
 		return
 	}
@@ -89,7 +129,7 @@ func (a *App) createMember(w http.ResponseWriter, r *http.Request, p principal) 
 		a.failure(w, err)
 		return
 	}
-	write(w, 201, member{ID: id, Email: in.Email, Name: in.Name, Role: in.Role, Status: "active"})
+	write(w, 201, member{ID: id, Email: in.Email, Name: in.Name, Role: in.Role, Status: status})
 }
 
 func (a *App) updateMember(w http.ResponseWriter, r *http.Request, p principal) {
@@ -105,7 +145,7 @@ func (a *App) updateMember(w http.ResponseWriter, r *http.Request, p principal) 
 	if !readJSON(w, r, &in) {
 		return
 	}
-	if !roleAllowed(in.Role) || (in.Status != "active" && in.Status != "disabled") {
+	if !roleAllowed(in.Role) || (in.Status != "active" && in.Status != "disabled" && in.Status != "invited") {
 		problem(w, 422, "validation_error", "Проверьте роль и статус сотрудника")
 		return
 	}
@@ -137,6 +177,10 @@ func (a *App) updateMember(w http.ResponseWriter, r *http.Request, p principal) 
 			problem(w, 409, "last_admin", "Нельзя отключить или понизить роль последнего администратора")
 			return
 		}
+	}
+	if (m.Status == "invited" && in.Status == "active") || (m.Status != "invited" && in.Status == "invited") {
+		problem(w, 409, "invitation_pending", "Приглашённый сотрудник должен подтвердить ссылку; отключённому можно выдать новое приглашение")
+		return
 	}
 	if _, err = tx.Exec(r.Context(), `UPDATE memberships SET role=$3,status=$4 WHERE organization_id=$1 AND user_id=$2`, p.OrganizationID, id, in.Role, in.Status); err != nil {
 		a.failure(w, err)

@@ -21,7 +21,7 @@ type Readiness struct{ Pool *pgxpool.Pool }
 func (r Readiness) Check(ctx context.Context) error {
 	var complete bool
 	// Require the last migration, not merely an open connection.
-	err := r.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name = '0009_audit_and_retention.sql')`).Scan(&complete)
+	err := r.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name = '0013_legacy_import.sql')`).Scan(&complete)
 	if err != nil {
 		return err
 	}

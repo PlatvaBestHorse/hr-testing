@@ -42,7 +42,7 @@ runtime-check:
 	node scripts/check_attempt_runtime.mjs
 
 build:
-	cd backend && go build ./cmd/api ./cmd/migrate ./cmd/bootstrap ./cmd/set-password ./cmd/backup
+	cd backend && go build ./cmd/api ./cmd/migrate ./cmd/bootstrap ./cmd/set-password ./cmd/backup ./cmd/org-resume
 	cd frontend && npm run build
 
 check: test build

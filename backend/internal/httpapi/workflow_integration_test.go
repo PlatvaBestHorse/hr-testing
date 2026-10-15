@@ -72,7 +72,23 @@ func TestAuthenticatedWorkflow(t *testing.T) {
 			t.Error("local test-owner cleanup requires maintenance privileges")
 			return
 		}
-		for _, table := range []string{"auth_sessions", "retention_previews", "retention_policies", "outbound_messages", "audit_events", "candidate_consents", "answer_receipts", "start_receipts", "attempt_answers", "attempt_items", "attempts", "invitations", "vacancy_assessors", "candidates", "vacancies", "test_items", "test_versions", "tests", "question_options", "question_versions", "questions", "categories", "memberships", "organizations"} {
+		// Replica mode also disables FK cascades: remove new dependent fixture
+		// rows explicitly before their parent tokens/users disappear.
+		for _, sql := range []string{
+			`DELETE FROM account_mail WHERE token_hash IN (SELECT token_hash FROM account_tokens WHERE organization_id=ANY($1::uuid[]))`,
+		} {
+			if _, err := cleanupTx.Exec(cleanup, sql, orgIDs); err != nil {
+				t.Error("account mail fixture cleanup failed")
+				return
+			}
+		}
+		for _, table := range []string{"mfa_recovery_codes", "user_security"} {
+			if _, err := cleanupTx.Exec(cleanup, `DELETE FROM `+table+` WHERE user_id IN (SELECT id FROM users WHERE id=ANY($1::uuid[]) OR email LIKE $2)`, userIDs, "%"+suffix+"@fixture.test"); err != nil {
+				t.Error("account security fixture cleanup failed")
+				return
+			}
+		}
+		for _, table := range []string{"imported_tests", "imported_questions", "import_batches", "result_comments", "account_tokens", "auth_sessions", "retention_previews", "retention_policies", "outbound_messages", "audit_events", "candidate_consents", "answer_receipts", "start_receipts", "attempt_answers", "attempt_items", "attempts", "invitations", "vacancy_assessors", "candidates", "vacancies", "test_items", "test_versions", "tests", "question_options", "question_versions", "attachments", "questions", "categories", "memberships", "organizations"} {
 			column := "organization_id"
 			if table == "organizations" {
 				column = "id"
@@ -89,6 +105,13 @@ func TestAuthenticatedWorkflow(t *testing.T) {
 		}
 		if err = cleanupTx.Commit(cleanup); err != nil {
 			t.Error("fixture cleanup commit failed")
+		}
+		var orphaned int
+		if err := owner.QueryRow(cleanup, `SELECT
+		 (SELECT count(*) FROM account_mail m WHERE NOT EXISTS(SELECT 1 FROM account_tokens t WHERE t.token_hash=m.token_hash))+
+		 (SELECT count(*) FROM user_security s WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id))+
+		 (SELECT count(*) FROM mfa_recovery_codes c WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=c.user_id))`).Scan(&orphaned); err != nil || orphaned != 0 {
+			t.Error("fixture teardown left orphaned account records")
 		}
 	}()
 	for _, label := range []string{"A", "B"} {
@@ -304,6 +327,19 @@ func TestAuthenticatedWorkflow(t *testing.T) {
 	})
 	t.Run("audit and retention workflow", func(t *testing.T) {
 		exerciseGovernance(t, ctx, owner, app, call, admin, recruiter, assessor, other, orgIDs[0], orgIDs[1])
+	})
+	t.Run("question images workflow", func(t *testing.T) {
+		exerciseImages(t, ctx, owner, app, call, admin, recruiter, assessor, other, orgIDs[0], orgIDs[1], ids["assessor"])
+	})
+	t.Run("administration workflow", func(t *testing.T) {
+		exerciseAdministration(t, ctx, owner, app, call, admin, recruiter, assessor, other, orgIDs[0], orgIDs[1], password, emails["recruiter"])
+	})
+	other = login(emails["admin-b"])
+	t.Run("legacy import workflow", func(t *testing.T) {
+		exerciseLegacyImport(t, ctx, owner, call, admin, recruiter, assessor, other, orgIDs[0], orgIDs[1])
+	})
+	t.Run("account security workflow", func(t *testing.T) {
+		exerciseAccountSecurity(t, ctx, owner, app, call, recruiter, other, password, emails["recruiter"])
 	})
 	t.Run("login limiter", func(t *testing.T) {
 		_, err := owner.Exec(ctx, `UPDATE auth_rate_limits SET attempts=10 WHERE bucket=$1`, "email:"+hex.EncodeToString(digest(emails["admin-a"])))

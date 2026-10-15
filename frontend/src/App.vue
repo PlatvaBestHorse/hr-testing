@@ -34,7 +34,7 @@ async function signOut() { try { await logout() } catch (err) { logoutError.valu
       <nav><RouterLink v-for="link in visibleLinks" :key="link.path" :to="link.path" class="nav-link"><component :is="link.icon" :size="20" /><span>{{ link.label }}</span></RouterLink><template v-if="session.user?.role === 'org_admin'"><RouterLink to="/team" class="nav-link"><UserRoundCog :size="20" />Команда</RouterLink><RouterLink to="/audit" class="nav-link"><ClipboardList :size="20" />Журнал аудита</RouterLink><RouterLink to="/retention" class="nav-link"><Settings :size="20" />Хранение данных</RouterLink></template></nav>
       <div class="sidebar-bottom">
         <div v-if="session.user?.role !== 'assessor'" class="sidebar-note"><span class="note-icon">✦</span><strong>От вопроса к решению</strong><p>Тесты, которые помогают лучше узнать кандидата.</p><RouterLink to="/tests">К тестам <ArrowUpRight :size="16" /></RouterLink></div>
-        <RouterLink to="/settings" class="nav-link"><Settings :size="20" />Настройки</RouterLink>
+        <RouterLink to="/security" class="nav-link"><UserRoundCog :size="20" />Безопасность</RouterLink><RouterLink to="/settings" class="nav-link"><Settings :size="20" />Настройки</RouterLink>
         <div class="workspace-identity"><span class="avatar">{{ session.user?.display_name.slice(0, 2).toUpperCase() }}</span><div><strong>{{ session.user?.display_name }}</strong><span>{{ session.user && roleNames[session.user.role] }}</span></div><button class="icon-button" aria-label="Выйти" @click="signOut"><LogOut :size="17" /></button></div><p v-if="logoutError" class="form-error" role="alert">{{ logoutError }}</p>
       </div>
     </aside>

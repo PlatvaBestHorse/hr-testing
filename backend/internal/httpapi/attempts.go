@@ -18,8 +18,9 @@ import (
 
 // Candidate DTOs deliberately contain no scoring keys, weights or pass threshold.
 type candidateOption struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	ImageID string `json:"image_id"`
 }
 type candidateItem struct {
 	ID       string            `json:"id"`
@@ -27,6 +28,7 @@ type candidateItem struct {
 	Type     string            `json:"type"`
 	Body     string            `json:"body"`
 	Passage  string            `json:"passage"`
+	ImageID  string            `json:"image_id"`
 	Options  []candidateOption `json:"options"`
 	Selected []string          `json:"selected_option_ids"`
 	Revision int               `json:"revision"`
@@ -287,9 +289,9 @@ func snapshot(ctx context.Context, tx pgx.Tx, i attemptInvite, id string) (candi
 	if out.Status != "in_progress" {
 		return out, nil
 	}
-	rows, err := tx.Query(ctx, `SELECT ai.id,ai.position,q.type,q.body,coalesce(q.passage,''),
+	rows, err := tx.Query(ctx, `SELECT ai.id,ai.position,q.type,q.body,coalesce(q.passage,''),coalesce(q.image_id::text,''),
  coalesce(aa.selected_option_ids,'{}'::uuid[]),coalesce(aa.revision,0),
- (SELECT jsonb_agg(jsonb_build_object('id',o.id,'label',o.label) ORDER BY ord.n)
+ (SELECT jsonb_agg(jsonb_build_object('id',o.id,'label',o.label,'image_id',coalesce(o.image_id::text,'')) ORDER BY ord.n)
  FROM jsonb_array_elements_text(ai.option_order) WITH ORDINALITY ord(id,n)
  JOIN question_options o ON o.organization_id=ai.organization_id AND o.id=ord.id::uuid)
  FROM attempt_items ai JOIN test_items ti ON ti.organization_id=ai.organization_id AND ti.id=ai.test_item_id
@@ -302,7 +304,7 @@ func snapshot(ctx context.Context, tx pgx.Tx, i attemptInvite, id string) (candi
 	defer rows.Close()
 	for rows.Next() {
 		var item candidateItem
-		if err = rows.Scan(&item.ID, &item.Position, &item.Type, &item.Body, &item.Passage, &item.Selected, &item.Revision, &item.Options); err != nil {
+		if err = rows.Scan(&item.ID, &item.Position, &item.Type, &item.Body, &item.Passage, &item.ImageID, &item.Selected, &item.Revision, &item.Options); err != nil {
 			return out, err
 		}
 		out.Items = append(out.Items, item)

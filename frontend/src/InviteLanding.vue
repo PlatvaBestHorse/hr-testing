@@ -4,8 +4,9 @@ import { useRoute } from 'vue-router'
 import { Layers, Clock, ClipboardList } from '@lucide/vue'
 import { api, ApiError } from './session'
 import { formatDate, formatDuration } from './domain'
+import QuestionImage from './QuestionImage.vue'
 interface Info { title: string; description: string; organization_name: string; duration_seconds: number; question_count: number; attempts_remaining: number; max_attempts: number; expires_at: string }
-interface Item { id: string; position: number; type: string; body: string; passage: string; options: { id: string; label: string }[]; selected_option_ids: string[]; revision: number }
+interface Item { id: string; position: number; type: string; body: string; passage: string; image_id: string; options: { id: string; label: string; image_id: string }[]; selected_option_ids: string[]; revision: number }
 interface Attempt { id: string; status: string; title: string; deadline_at: string; server_now: string; attempts_remaining: number; items: Item[]; score?: { percent: string; passed: boolean } }
 interface Receipt { revision: number; selected_option_ids: string[] }
 interface Pending { request_id: string; expected_revision: number; selected_option_ids: string[] }
@@ -144,12 +145,12 @@ onBeforeUnmount(() => { alive = false; clearInterval(ticker); clearInterval(poll
           <div class="passage-meta"><strong class="passage-timer" :class="{ urgent: remaining < 60 }" aria-label="Оставшееся время"><Clock :size="18" />{{ timerText }}</strong><span>Вопрос {{ index + 1 }} из {{ attempt.items.length }}</span></div>
           <p class="save-status" role="status">{{ statusText }}</p>
           <p v-if="remaining <= 0" class="form-error" role="alert">Время вышло. Сервер завершает попытку по сохранённым ответам.</p>
-          <div v-if="current.passage" class="question-passage">{{ current.passage }}</div><h2 class="passage-question">{{ current.body }}</h2>
+          <div v-if="current.passage" class="question-passage">{{ current.passage }}</div><h2 class="passage-question">{{ current.body }}</h2><QuestionImage v-if="current.image_id" :src="'/api/v1' + prefix + '/attempts/' + attempt.id + '/images/' + current.image_id" alt="Изображение вопроса" />
           <p class="muted-text">{{ current.type === 'multiple_choice' ? 'Выберите все подходящие варианты.' : 'Выберите один вариант.' }}</p>
           <fieldset class="passage-options" :disabled="busy || remaining <= 0 || answers[current.id]?.blocked">
             <legend class="sr-only">Варианты ответа</legend>
             <label v-for="option in current.options" :key="option.id" :class="{ chosen: answers[current.id]?.selected.includes(option.id) }">
-              <input :type="current.type === 'multiple_choice' ? 'checkbox' : 'radio'" :name="current.id" :checked="answers[current.id]?.selected.includes(option.id)" @change="choose(current, option.id)" /><span>{{ option.label }}</span>
+              <input :type="current.type === 'multiple_choice' ? 'checkbox' : 'radio'" :name="current.id" :aria-label="option.label" :checked="answers[current.id]?.selected.includes(option.id)" @change="choose(current, option.id)" /><span>{{ option.label }}<QuestionImage v-if="option.image_id" :src="'/api/v1' + prefix + '/attempts/' + attempt.id + '/images/' + option.image_id" :alt="'Изображение варианта: ' + option.label" /></span>
             </label>
           </fieldset>
           <p v-if="answers[current.id]?.error" class="form-error" role="alert">{{ answers[current.id]?.error }}</p>

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Кадровый тестер — HR API
-  version: 0.6.0
+  version: 0.9.0
   description: HR API, прохождение, отчёты, аудит и контролируемые правила хранения
     данных.
 paths:
@@ -2385,6 +2385,1250 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/RetentionHoldInput'
+  /api/v1/images:
+    post:
+      operationId: uploadImage
+      summary: Загрузить изображение вопроса или варианта
+      description: Только org_admin/recruiter. Один multipart файл file, PNG/JPEG до 5 МиБ. Сигнатура/MIME,
+        полное декодирование и перекодирование; максимум 4096 по стороне, 8 миллионов пикселей. Лимит
+        организации 100 МиБ/1000 файлов; 2 одновременно обрабатываемых загрузки. Пишется image.upload.
+      responses:
+        '201':
+          description: Файл сохранён, ID можно указать в новой версии вопроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageMetadata'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '413':
+          description: Превышен размер файла
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: Неверный multipart или MIME, нужен PNG/JPEG
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Обработка изображений занята
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - &id001
+        name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - &id002
+        name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+            encoding:
+              file:
+                contentType: image/png, image/jpeg
+    get:
+      operationId: unusedImages
+      summary: Неиспользуемые изображения
+      description: Только org_admin/recruiter своей организации. Только inline-файлы, не связанные
+        ни с одной версией/вариантом. 20 на страницу, новые сначала.
+      responses:
+        '200':
+          description: Страница загрузок
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnusedImageList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+      parameters:
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1
+  /api/v1/images/{image}:
+    get:
+      operationId: getBankImage
+      summary: Изображение банка вопросов
+      description: Только org_admin/recruiter своей организации; assessor не получает доступ к банку.
+        Чужой/несуществующий файл — 404.
+      responses:
+        '200': &id003
+          description: Нормализованный PNG/JPEG без исходного имени и метаданных; no-store, nosniff,
+            no-referrer, CORP same-origin.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '500':
+          $ref: '#/components/responses/Error500'
+      parameters:
+      - name: image
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: deleteUnusedImage
+      summary: Удалить неиспользуемую загрузку
+      description: org_admin/recruiter своей организации. FK запрещает удалять файл, связанный с любой
+        сохранённой версией/вариантом, включая черновики (409). Аудит image.delete.
+      responses:
+        '204':
+          description: Неиспользуемый файл удалён
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '500':
+          $ref: '#/components/responses/Error500'
+      parameters:
+      - name: image
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - *id001
+      - *id002
+  /api/v1/invite/{token}/attempts/{id}/images/{image}:
+    get:
+      operationId: getCandidateImage
+      summary: Изображение своей активной попытки
+      description: Канонический bearer token приглашения; HR-cookie не даёт дополнительных прав. Только
+        issued/live приглашение и in_progress попытка до deadline, принадлежащая этому приглашению.
+        Файл обязан быть в снимке вопросов/вариантов этой попытки. До старта, после завершения/срока/отзыва
+        и для других файлов — 404.
+      responses:
+        '200': *id003
+        '404':
+          $ref: '#/components/responses/Error404'
+        '500':
+          $ref: '#/components/responses/Error500'
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: image
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      security: []
+  /api/v1/results/{id}/images/{image}:
+    get:
+      operationId: getReportImage
+      summary: Изображение подробного отчёта
+      description: Те же role/tenant/назначение вакансии, что у отчётов. Только submitted/expired (иначе
+        409); файл обязан принадлежать снимку этой попытки. Чужой результат/файл — 404. Кандидатская
+        ссылка доступа не даёт.
+      responses:
+        '200': *id003
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '500':
+          $ref: '#/components/responses/Error500'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: image
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /api/v1/auth/options:
+    get:
+      operationId: authOptions
+      summary: Доступность восстановления
+      description: Без аккаунтных сведений. local_mail означает тестовый ящик без внешней отправки.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthOptions'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security: []
+  /api/v1/auth/recovery/request:
+    post:
+      operationId: requestAccountRecovery
+      summary: Запросить восстановление пароля
+      description: Одинаковый 202 для доступной и неизвестной почты; доставка асинхронная. Ссылка 15 минут,
+        повторный запрос отменяет предыдущую. 3 запроса на адрес/20 на IP за 15 минут. Почта disabled даёт
+        503 для всех адресов.
+      responses:
+        '202':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryMessage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoveryRequestInput'
+      security: []
+  /api/v1/auth/recovery/complete:
+    post:
+      operationId: completeAccountRecovery
+      summary: Задать пароль по одноразовой ссылке
+      description: Секрет передаётся JSON, в письме находится во fragment URL. Активный MFA требует TOTP/резервный
+        код и остаётся включённым. Успех отзывает все сессии/токены пользователя во всех организациях; автоматического
+        входа нет. staff_invite активирует только ожидающее членство своего токена.
+      responses:
+        '204':
+          description: Успешно
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoveryCompleteInput'
+      security: []
+  /api/v1/security:
+    get:
+      operationId: accountSecurity
+      summary: Состояние защиты своего аккаунта
+      description: Любая роль. Без seed, хешей, чужих user_id и кодов.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountSecurityStatus'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/security/password:
+    post:
+      operationId: changeOwnPassword
+      summary: Сменить собственный пароль
+      description: Текущий пароль и при включённом MFA второй фактор. От 12 символов/до 1024 байт, отличается
+        от текущего. Завершает все сессии и ссылки; вход заново.
+      responses:
+        '204':
+          description: Успешно
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountPasswordInput'
+  /api/v1/security/mfa/setup:
+    post:
+      operationId: setupOwnMFA
+      summary: Подготовить TOTP
+      description: Повторная проверка пароля. Новый seed отменяет прошлый pending seed, действует 10 минут.
+        Ещё не включает MFA. AES-GCM с контекстом пользователя; ключ и otpauth_uri нельзя журналировать.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MFASetup'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFAPasswordInput'
+  /api/v1/security/mfa/confirm:
+    post:
+      operationId: confirmOwnMFA
+      summary: Подтвердить TOTP и включить MFA
+      description: Пароль+код pending seed. Окно ±1 шага по 30 секунд, принятый счётчик одноразовый. Восемь
+        резервных кодов показаны один раз. Все сессии и ссылки отзываются.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MFACodes'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFAConfirmationInput'
+  /api/v1/security/mfa/disable:
+    post:
+      operationId: disableOwnMFA
+      summary: Отключить свой второй фактор
+      description: Пароль и действующий TOTP/резервный код; отзывает сессии/ссылки, удаляет seed и все резервные
+        коды.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MFACodes'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFAProofInput'
+  /api/v1/security/mfa/recovery-codes:
+    post:
+      operationId: regenerateOwnMFACodes
+      summary: Заменить резервные коды
+      description: Пароль и второй фактор. Старые восемь кодов отменяются; новые показаны один раз, все
+        сессии завершены.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MFACodes'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFAProofInput'
+  /api/v1/organization:
+    get:
+      operationId: getCurrentOrganization
+      summary: Настройки своей организации
+      description: Все активные сотрудники читают только свою организацию.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationSettings'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: saveCurrentOrganization
+      summary: Изменить организацию
+      description: Только org_admin, свежая сессия и base_revision. Закрытие статуса требует точную фразу
+        ЗАКРЫТЬ ДОСТУП, завершает сессии и блокирует HR/кандидатский доступ. Возобновление через maintenance
+        cmd/org-resume. Дефолт срока влияет на форму новых приглашений.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationSettingsSaved'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationSettingsInput'
+  /api/v1/team/invitations:
+    post:
+      operationId: inviteStaffMember
+      summary: Пригласить нового сотрудника
+      description: 'org_admin. Без начального пароля: членство invited, письмо с одноразовой ссылкой 48
+        часов. До подтверждения вход закрыт. Существующий глобальный email даёт 409; не присоединяет чужой
+        аккаунт автоматически.'
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffInvitationInput'
+  /api/v1/team/{id}/invitation:
+    post:
+      operationId: reinviteStaffMember
+      summary: Повторить приглашение сотрудника
+      description: org_admin своей организации; только invited. Отменяет старую ссылку, выдаёт новую на
+        48 часов. Отключённые и действующие аккаунты не меняет.
+      responses:
+        '204':
+          description: Успешно
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+  /api/v1/results/{id}/comments:
+    get:
+      operationId: listResultComments
+      summary: Комментарии к завершённому результату
+      description: Та же организация и назначение вакансии, что у отчёта. submitted/expired, иначе 409.
+        20 на страницу, максимум 100 комментариев. Кандидату недоступно.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultCommentList'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1
+    post:
+      operationId: createResultComment
+      summary: Добавить комментарий к результату
+      description: Сотрудник с доступом к результату, автор фиксируется сессией. Только текст, максимум
+        5000 символов и 100 комментариев на попытку. Аудит без копирования текста.
+      responses:
+        '201':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultCommentSaved'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultCommentInput'
+  /api/v1/results/{id}/comments/{comment}:
+    patch:
+      operationId: editResultComment
+      summary: Изменить свой комментарий
+      description: Только автор с текущим доступом к результату. base_updated_at защищает от потери конкурентных
+        правок; чужой комментарий 403.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultCommentSaved'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: comment
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultCommentUpdate'
+    delete:
+      operationId: deleteResultComment
+      summary: Удалить комментарий
+      description: Автор либо org_admin своей организации, оба с доступом к завершённому результату. Аудит
+        сохраняет ID, без текста.
+      responses:
+        '204':
+          description: Успешно
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          description: Сервис/ключ шифрования/почта не настроены или временно недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: comment
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+  /api/v1/import/questions/preview:
+    post:
+      operationId: legacyImportPreview
+      summary: Проверка CandidateTester version 1 без изменения банка
+      description: Только org_admin своей организации. source_sha256 считается от канонического типизированного
+        JSON. Все вопросы публикуются; published, shuffle и showScore тестов сохраняются. Импорт ограничен
+        single; неизвестные поля и дубли JSON-ключей отклоняются. Исходный файл не сохраняется API.
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportInput'
+      responses:
+        '200':
+          description: Предварительный отчёт без записи предметных данных
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportPreview'
+        '400':
+          description: Неверный JSON или тело более 512 КиБ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Сессия завершена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Требуются org_admin, Origin и CSRF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: Нужен application/json
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: 2 одновременных импорта; 30 запросов на аккаунт/организацию и 120 на IP за 15 минут
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Ошибка; транзакция не применена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/import/questions/apply:
+    post:
+      operationId: legacyImportApply
+      summary: Подтверждённый атомарный импорт вопросов и тестов
+      description: Только org_admin своей организации. source_sha256 считается от канонического типизированного
+        JSON. Все вопросы публикуются; published, shuffle и showScore тестов сохраняются. Импорт ограничен
+        single; неизвестные поля и дубли JSON-ключей отклоняются. Исходный файл не сохраняется API.
+      parameters:
+      - name: Origin
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportApplyInput'
+      responses:
+        '200':
+          description: Прежняя квитанция повторного запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportReceipt'
+        '400':
+          description: Неверный JSON или тело более 512 КиБ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Сессия завершена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Требуются org_admin, Origin и CSRF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: Нужен application/json
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: 2 одновременных импорта; 30 запросов на аккаунт/организацию и 120 на IP за 15 минут
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Ошибка; транзакция не применена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '201':
+          description: Атомарно созданы новые объекты; сохранена квитанция
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportReceipt'
+        '409':
+          description: Не совпадает проверенное содержимое, нет подтверждения или ID уже импортирован из
+            другого файла; существующие данные не перезаписаны
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/Error'
+                - $ref: '#/components/schemas/ImportFailure'
+        '422':
+          description: Файл содержит ошибки; ничего не импортировано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportFailure'
+
 components:
   responses:
     Ready:
@@ -2464,7 +3708,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     Error429:
-      description: 'Лимит входа; Retry-After: 900'
+      description: 'Лимит повторов; для входа Retry-After: 900'
       content:
         application/json:
           schema:
@@ -2549,6 +3793,11 @@ components:
         organization_slug:
           type: string
           maxLength: 80
+        second_factor:
+          type: string
+          maxLength: 64
+          writeOnly: true
+          description: 6 цифр TOTP либо одноразовый резервный код
       required:
       - email
       - password
@@ -2593,6 +3842,10 @@ components:
           maxLength: 2000
         is_correct:
           type: boolean
+        image_id:
+          type: string
+          description: UUID изображения своей организации или пустая строка; самостоятельного права доступа
+            не даёт
       required:
       - label
       - is_correct
@@ -2632,8 +3885,11 @@ components:
         base_version_no:
           type: integer
           minimum: 0
-          description: Для новой редакции обязательный актуальный номер предыдущей
-            версии
+          description: Для новой редакции обязательный актуальный номер предыдущей версии
+        image_id:
+          type: string
+          description: UUID изображения своей организации или пустая строка; самостоятельного права доступа
+            не даёт
       required:
       - difficulty
       - type
@@ -2771,6 +4027,7 @@ components:
           type: string
           enum:
           - active
+          - invited
           - disabled
       required:
       - role
@@ -2861,6 +4118,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/VersionInfo'
+        image_id:
+          type: string
+          description: UUID изображения своей организации или пустая строка; самостоятельного права доступа
+            не даёт
       required:
       - category_id
       - difficulty
@@ -2878,6 +4139,7 @@ components:
       - version_status
       - created_at
       - versions
+      - image_id
     QuestionList:
       type: object
       additionalProperties: false
@@ -3456,12 +4718,17 @@ components:
       required:
       - id
       - label
+      - image_id
       properties:
         id:
           type: string
           format: uuid
         label:
           type: string
+        image_id:
+          type: string
+          description: UUID изображения своей организации или пустая строка; самостоятельного права доступа
+            не даёт
     CandidateItem:
       type: object
       additionalProperties: false
@@ -3474,6 +4741,7 @@ components:
       - options
       - selected_option_ids
       - revision
+      - image_id
       properties:
         id:
           type: string
@@ -3503,6 +4771,10 @@ components:
         revision:
           type: integer
           minimum: 0
+        image_id:
+          type: string
+          description: UUID изображения своей организации или пустая строка; самостоятельного права доступа
+            не даёт
     CandidateScore:
       type: object
       additionalProperties: false
@@ -3714,6 +4986,7 @@ components:
       - label
       - selected
       - is_correct
+      - image_id
       properties:
         id:
           type: string
@@ -3724,6 +4997,10 @@ components:
           type: boolean
         is_correct:
           type: boolean
+        image_id:
+          type: string
+          description: UUID изображения своей организации или пустая строка; самостоятельного права доступа
+            не даёт
     ReportItem:
       type: object
       additionalProperties: false
@@ -3743,6 +5020,7 @@ components:
       - answered
       - score_points
       - max_points
+      - image_id
       properties:
         id:
           type: string
@@ -3783,6 +5061,10 @@ components:
           type: string
         max_points:
           type: string
+        image_id:
+          type: string
+          description: UUID изображения своей организации или пустая строка; самостоятельного права доступа
+            не даёт
     ReportCategory:
       type: object
       additionalProperties: false
@@ -4213,5 +5495,662 @@ components:
                 type: string
               reason:
                 type: string
+    ImageMetadata:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - mime_type
+      - byte_size
+      - width
+      - height
+      properties:
+        id:
+          type: string
+          format: uuid
+        mime_type:
+          type: string
+          enum:
+          - image/png
+          - image/jpeg
+        byte_size:
+          type: integer
+          minimum: 1
+          maximum: 5242880
+        width:
+          type: integer
+          minimum: 1
+          maximum: 4096
+        height:
+          type: integer
+          minimum: 1
+          maximum: 4096
+    UnusedImageList:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageMetadata'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          const: 20
+    AuthOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        recovery_available: &security001
+          type: boolean
+        local_mail: *security001
+      required:
+      - recovery_available
+      - local_mail
+    AccountSecurityStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        mfa_enabled: *security001
+        mfa_available: *security001
+        recovery_codes_remaining:
+          type: integer
+          minimum: 0
+          maximum: 8
+      required:
+      - mfa_enabled
+      - mfa_available
+      - recovery_codes_remaining
+    AccountPasswordInput:
+      type: object
+      additionalProperties: false
+      properties:
+        current_password: &security002
+          type: string
+          minLength: 1
+          maxLength: 1024
+          writeOnly: true
+        new_password: &security004
+          type: string
+          minLength: 12
+          maxLength: 1024
+          writeOnly: true
+          description: Не более 1024 байт UTF-8
+        second_factor: &security003
+          type: string
+          maxLength: 64
+          writeOnly: true
+          description: 6 цифр TOTP либо одноразовый резервный код
+      required:
+      - current_password
+      - new_password
+    MFAPasswordInput:
+      type: object
+      additionalProperties: false
+      properties:
+        password: *security002
+      required:
+      - password
+    MFAConfirmationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        password: *security002
+        code:
+          type: string
+          pattern: ^[0-9]{6}$
+          writeOnly: true
+      required:
+      - password
+      - code
+    MFAProofInput:
+      type: object
+      additionalProperties: false
+      properties:
+        password: *security002
+        second_factor: *security003
+      required:
+      - password
+      - second_factor
+    MFASetup:
+      type: object
+      additionalProperties: false
+      properties:
+        secret:
+          type: string
+          description: Показывается только в ответе настройки, не сохраняйте в логах
+        otpauth_uri:
+          type: string
+        expires_in:
+          type: integer
+          const: 600
+      required:
+      - secret
+      - otpauth_uri
+      - expires_in
+    MFACodes:
+      type: object
+      additionalProperties: false
+      properties:
+        recovery_codes:
+          type:
+          - array
+          - 'null'
+          minItems: 8
+          maxItems: 8
+          items:
+            type: string
+        sign_in_required:
+          type: boolean
+          const: true
+      required:
+      - recovery_codes
+      - sign_in_required
+    RecoveryRequestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+      required:
+      - email
+    RecoveryMessage:
+      type: object
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+      required:
+      - message
+    RecoveryCompleteInput:
+      type: object
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{43}$
+          writeOnly: true
+        new_password: *security004
+        second_factor: *security003
+      required:
+      - token
+      - new_password
+    OrganizationSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        id: &security005
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+          enum:
+          - active
+          - suspended
+          - archived
+        invitation_default_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        revision:
+          type: integer
+          minimum: 1
+      required:
+      - id
+      - name
+      - slug
+      - status
+      - invitation_default_days
+      - revision
+    OrganizationSettingsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 250
+        status:
+          type: string
+          enum:
+          - active
+          - suspended
+          - archived
+        invitation_default_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        base_revision:
+          type: integer
+          minimum: 1
+        confirmation:
+          type: string
+          description: ЗАКРЫТЬ ДОСТУП для suspended/archived
+      required:
+      - name
+      - status
+      - invitation_default_days
+      - base_revision
+    OrganizationSettingsSaved:
+      type: object
+      additionalProperties: false
+      properties:
+        revision:
+          type: integer
+        status:
+          type: string
+      required:
+      - revision
+      - status
+    StaffInvitationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 250
+        role:
+          type: string
+          enum:
+          - org_admin
+          - recruiter
+          - assessor
+      required:
+      - email
+      - display_name
+      - role
+    ResultComment:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *security005
+        author_user_id: *security005
+        author_name:
+          type: string
+        body:
+          type: string
+        created_at: &security006
+          type: string
+          format: date-time
+        updated_at: *security006
+        can_edit: *security001
+        can_delete: *security001
+      required:
+      - id
+      - author_user_id
+      - author_name
+      - body
+      - created_at
+      - updated_at
+      - can_edit
+      - can_delete
+    ResultCommentInput:
+      type: object
+      additionalProperties: false
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+      required:
+      - body
+    ResultCommentUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        base_updated_at: *security006
+      required:
+      - body
+      - base_updated_at
+    ResultCommentSaved:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *security005
+      required:
+      - id
+    ResultCommentList:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResultComment'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          const: 20
+      required:
+      - items
+      - total
+      - page
+      - page_size
+    LegacyChoice:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9_.-]{1,80}$
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required:
+      - id
+      - text
+    LegacyQuestion:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9_.-]{1,80}$
+        type:
+          type: string
+          const: single
+        category:
+          type: string
+          minLength: 1
+          maxLength: 150
+        difficulty:
+          type: string
+          enum:
+          - Лёгкий
+          - Средний
+          - Сложный
+        passage:
+          type: string
+          maxLength: 20000
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        choices:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/LegacyChoice'
+        correct:
+          type: string
+          pattern: ^[A-Za-z0-9_.-]{1,80}$
+        explanation:
+          type: string
+          maxLength: 10000
+      required:
+      - id
+      - type
+      - category
+      - difficulty
+      - text
+      - choices
+      - correct
+    LegacyTest:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9_.-]{1,80}$
+        title:
+          type: string
+          minLength: 1
+          maxLength: 250
+        description:
+          type: string
+          maxLength: 10000
+        minutes:
+          type: integer
+          minimum: 1
+          maximum: 480
+        passing:
+          type: number
+          minimum: 0
+          maximum: 100
+          multipleOf: 0.01
+        questionIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items:
+            type: string
+            pattern: ^[A-Za-z0-9_.-]{1,80}$
+        shuffle:
+          type: boolean
+        published:
+          type: boolean
+        showScore:
+          type: boolean
+      required:
+      - id
+      - title
+      - minutes
+      - passing
+      - questionIds
+      - shuffle
+      - published
+      - showScore
+    LegacySource:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          const: 1
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/LegacyQuestion'
+        tests:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/LegacyTest'
+      required:
+      - version
+      - questions
+    ImportIssue:
+      type: object
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+      required:
+      - path
+      - code
+      - message
+    ImportPreviewTest:
+      type: object
+      additionalProperties: false
+      properties:
+        source_id:
+          type: string
+          pattern: ^[A-Za-z0-9_.-]{1,80}$
+        title:
+          type: string
+        question_count:
+          type: integer
+        minutes:
+          type: integer
+        passing:
+          type: number
+        shuffle:
+          type: boolean
+        published:
+          type: boolean
+        show_score:
+          type: boolean
+      required:
+      - source_id
+      - title
+      - question_count
+      - minutes
+      - passing
+      - shuffle
+      - published
+      - show_score
+    ImportPreview:
+      type: object
+      additionalProperties: false
+      properties:
+        valid:
+          type: boolean
+        source_sha256:
+          type: string
+          pattern: ^([0-9a-f]{64})?$
+        question_count:
+          type: integer
+          minimum: 0
+        test_count:
+          type: integer
+          minimum: 0
+        categories:
+          type: array
+          items:
+            type: string
+        tests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportPreviewTest'
+        errors:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ImportIssue'
+        warnings:
+          type: array
+          items:
+            type: string
+        already_applied:
+          type: boolean
+      required:
+      - valid
+      - source_sha256
+      - question_count
+      - test_count
+      - categories
+      - tests
+      - errors
+      - warnings
+      - already_applied
+    ImportObject:
+      type: object
+      additionalProperties: false
+      properties:
+        source_id:
+          type: string
+          pattern: ^[A-Za-z0-9_.-]{1,80}$
+        id:
+          type: string
+          format: uuid
+      required:
+      - source_id
+      - id
+    ImportReceipt:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportObject'
+        tests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportObject'
+        categories_created:
+          type: integer
+          minimum: 0
+      required:
+      - id
+      - source_sha256
+      - questions
+      - tests
+      - categories_created
+    ImportInput:
+      type: object
+      additionalProperties: false
+      properties:
+        source:
+          $ref: '#/components/schemas/LegacySource'
+        preview_sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        confirmation:
+          type: string
+          const: ИМПОРТИРОВАТЬ
+      required:
+      - source
+    ImportFailure:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        errors:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ImportIssue'
+      required:
+      - code
+      - message
+      - errors
+
+    ImportApplyInput:
+      allOf:
+      - $ref: '#/components/schemas/ImportInput'
+      - required:
+        - source
+        - preview_sha256
+        - confirmation
+
 security:
 - sessionCookie: []

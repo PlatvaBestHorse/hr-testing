@@ -3,6 +3,8 @@
 !.env.example
 .local/
 .backups/
+.mailbox/
+.imports/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/

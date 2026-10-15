@@ -11,20 +11,20 @@ export const roleNames: Record<Role, string> = { org_admin: 'Администр�
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: string[]) { super(message) }
 }
-export function forgetSession() {
+export function forgetSession(notify = true) {
   session.user = null; session.loaded = true
-  window.dispatchEvent(new Event('hr-session-expired'))
+  if (notify) window.dispatchEvent(new Event('hr-session-expired'))
 }
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
-  if (options.body) headers.set('Content-Type', 'application/json')
+  if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   if (options.method && !['GET', 'HEAD'].includes(options.method) && session.user) headers.set('X-CSRF-Token', session.user.csrf_token)
   let response: Response
   try { response = await fetch('/api/v1' + path, { ...options, headers, credentials: 'same-origin', cache: 'no-store' }) }
   catch { throw new ApiError(0, 'offline', 'Нет соединения с сервером. Изменения не сохранены') }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
-    if (response.status === 401 && path !== '/auth/login' && path !== '/me') forgetSession()
+    if (response.status === 401 && path !== '/auth/login' && path !== '/me' && !path.startsWith('/auth/recovery/') && !['mfa_required', 'verification_failed'].includes(body.code)) forgetSession()
     const details = Array.isArray(body.errors) ? body.errors.filter((item: unknown) => typeof item === 'string') : undefined
     throw new ApiError(response.status, body.code || 'request_failed', (body.message || 'Не удалось выполнить запрос') + (details?.length ? ': ' + details.join('; ') : ''), details)
   }
@@ -41,8 +41,8 @@ export async function loadSession(force = false) {
   })()
   return pending
 }
-export async function login(email: string, password: string) {
-  session.user = await api<CurrentUser>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+export async function login(email: string, password: string, second_factor = '') {
+  session.user = await api<CurrentUser>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, second_factor }) })
   session.loaded = true
 }
 export async function logout() {

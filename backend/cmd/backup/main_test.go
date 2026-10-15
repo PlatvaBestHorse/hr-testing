@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"image"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +17,7 @@ import (
 
 	"github.com/PlatvaBestHorse/hr-testing/backend/internal/backup"
 	"github.com/PlatvaBestHorse/hr-testing/backend/internal/database"
+	"github.com/PlatvaBestHorse/hr-testing/backend/internal/identity"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -181,6 +185,52 @@ func TestBackupRestoreIntegration(t *testing.T) {
 	if e != nil {
 		t.Fatal("cannot seed isolated backup fixture")
 	}
+	userID := "00000000-0000-4000-8000-000000000002"
+	seed, e := identity.NewTOTPSecret()
+	if e != nil {
+		t.Fatal(e)
+	}
+	secret, e := identity.Encrypt(bytes.Repeat([]byte{6}, 32), "totp:"+userID, []byte(seed))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = pool.Exec(ctx, "UPDATE users SET mfa_enabled=true WHERE id=$1", userID); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = pool.Exec(ctx, "INSERT INTO user_security(user_id,secret_ciphertext,pending_ciphertext,pending_until,last_step) VALUES($1,$2,$2,clock_timestamp()+interval '10 minutes',0)", userID, secret); e != nil {
+		t.Fatal(e)
+	}
+	recoveryHash := sha256.Sum256([]byte("fixture-recovery-code"))
+	tokenHash := sha256.Sum256([]byte("fixture-password-link"))
+	binding := sha256.Sum256([]byte("fixture-only"))
+	if _, e = pool.Exec(ctx, "INSERT INTO mfa_recovery_codes(user_id,code_hash) VALUES($1,$2)", userID, recoveryHash[:]); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = pool.Exec(ctx, "INSERT INTO account_tokens(token_hash,user_id,organization_id,purpose,password_binding,expires_at) VALUES($1,$2,'00000000-0000-4000-8000-000000000001','reset',$3,clock_timestamp()+interval '15 minutes')", tokenHash[:], userID, binding[:]); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = pool.Exec(ctx, "INSERT INTO account_mail(token_hash,payload) VALUES($1,$2)", tokenHash[:], secret); e != nil {
+		t.Fatal(e)
+	}
+	var raster bytes.Buffer
+	if e = png.Encode(&raster, image.NewNRGBA(image.Rect(0, 0, 8, 6))); e != nil {
+		t.Fatal(e)
+	}
+	imageBytes := raster.Bytes()
+	sum := sha256.Sum256(imageBytes)
+	var imageID string
+	if e = pool.QueryRow(ctx, `INSERT INTO attachments(organization_id,storage_key,mime_type,byte_size,sha256,data,width,height)
+ VALUES('00000000-0000-4000-8000-000000000001','pg:fixture','image/png',$1,$2,$3,8,6) RETURNING id`, len(imageBytes), hex.EncodeToString(sum[:]), imageBytes).Scan(&imageID); e != nil {
+		t.Fatal("cannot seed backup image")
+	}
+	var questionID string
+	if e = pool.QueryRow(ctx, `INSERT INTO questions(organization_id) VALUES('00000000-0000-4000-8000-000000000001') RETURNING id`).Scan(&questionID); e != nil {
+		t.Fatal("cannot seed image question")
+	}
+	if _, e = pool.Exec(ctx, `INSERT INTO question_versions(organization_id,question_id,version_no,type,body,image_id,status)
+ VALUES('00000000-0000-4000-8000-000000000001',$1,1,'single_choice','Image backup fixture',$2,'published')`, questionID, imageID); e != nil {
+		t.Fatal("cannot seed image version")
+	}
 	conn, e := pgx.ConnectConfig(ctx, cfg)
 	if e != nil {
 		t.Fatal("cannot connect fixture")
@@ -218,6 +268,20 @@ func TestBackupRestoreIntegration(t *testing.T) {
 	var sessions, pending, candidates int
 	if e = recovered.QueryRow(ctx, "SELECT (SELECT count(*) FROM auth_sessions),(SELECT count(*) FROM outbound_messages WHERE status='pending'),(SELECT count(*) FROM candidates)").Scan(&sessions, &pending, &candidates); e != nil || sessions != 0 || pending != 0 || candidates != 1 {
 		t.Fatal("recovery safety or data preservation failed")
+	}
+	var restoredBytes []byte
+	if e = recovered.QueryRow(ctx, "SELECT data FROM attachments WHERE id=$1", imageID).Scan(&restoredBytes); e != nil || !bytes.Equal(restoredBytes, imageBytes) {
+		t.Fatal("image bytes lost during restore")
+	}
+	var restoredSecret []byte
+	var tokens, codeCount, mailCount int
+	var pendingSetup bool
+	if e = recovered.QueryRow(ctx, "SELECT secret_ciphertext,pending_ciphertext IS NOT NULL,(SELECT count(*) FROM account_tokens),(SELECT count(*) FROM mfa_recovery_codes),(SELECT count(*) FROM account_mail) FROM user_security WHERE user_id=$1", userID).Scan(&restoredSecret, &pendingSetup, &tokens, &codeCount, &mailCount); e != nil || pendingSetup || tokens != 0 || codeCount != 0 || mailCount != 0 {
+		t.Fatal("restore reactivated one-time account access")
+	}
+	plain, e := identity.Decrypt(bytes.Repeat([]byte{6}, 32), "totp:"+userID, restoredSecret)
+	if e != nil || string(plain) != seed {
+		t.Fatal("restored MFA seed cannot be decrypted with preserved key")
 	}
 	f, e := os.ReadFile(files[0])
 	if e != nil {

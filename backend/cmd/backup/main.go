@@ -451,7 +451,7 @@ func (o *operator) restore(ctx context.Context, owner *pgx.Conn, path, target st
 	if keep {
 		// Offline recovery safety: old cookies, invitations and outbound messages
 		// must not reactivate when an operator later switches the API.
-		if _, err = conn.Exec(ctx, "BEGIN; DELETE FROM auth_sessions; DELETE FROM retention_previews; UPDATE invitations SET status='revoked'; UPDATE outbound_messages SET status='cancelled' WHERE status IN ('pending','failed'); COMMIT"); err != nil {
+		if _, err = conn.Exec(ctx, "BEGIN; DELETE FROM auth_sessions; DELETE FROM retention_previews; DELETE FROM account_tokens; DELETE FROM mfa_recovery_codes; UPDATE user_security SET pending_ciphertext=NULL,pending_until=NULL,last_step=greatest(last_step,floor(extract(epoch FROM clock_timestamp())/30)::bigint); UPDATE invitations SET status='revoked'; UPDATE outbound_messages SET status='cancelled' WHERE status IN ('pending','failed'); COMMIT"); err != nil {
 			return errors.New("cannot disable restored access; isolated database is being removed")
 		}
 		retained = true
@@ -470,10 +470,11 @@ func checkPrivileges(ctx context.Context, conn *pgx.Conn) error {
  AND NOT has_table_privilege('hr_app','public.audit_events','UPDATE')
  AND NOT has_table_privilege('hr_app','public.audit_events','DELETE')
  AND NOT has_table_privilege('hr_app','public.schema_migrations','UPDATE')
+	 AND NOT has_table_privilege('hr_app','public.attachments','UPDATE')
  AND has_function_privilege('hr_app','public.prune_audit_events(uuid,bytea)','EXECUTE')
  AND NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='hr_app' AND (rolsuper OR rolbypassrls OR rolcreatedb OR rolcreaterole))
  AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_roles r ON r.oid=c.relowner WHERE n.nspname='public' AND r.rolname='hr_app')
-	 AND (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgenabled='O' AND tgname IN ('question_version_immutable','question_options_immutable','test_version_immutable','test_items_immutable'))=4`).Scan(&valid)
+	 AND (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgenabled='O' AND tgname IN ('question_version_immutable','question_options_immutable','test_version_immutable','test_items_immutable','attachment_immutable'))=5`).Scan(&valid)
 	if err != nil || !valid {
 		return errors.New("restored application permissions or triggers are unsafe")
 	}

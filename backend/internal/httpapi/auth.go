@@ -71,12 +71,13 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		Email            string `json:"email"`
 		Password         string `json:"password"`
 		OrganizationSlug string `json:"organization_slug"`
+		SecondFactor     string `json:"second_factor"`
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
 	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
-	if !identity.ValidEmail(in.Email) || len(in.Password) > 1024 || len(in.OrganizationSlug) > 80 {
+	if !identity.ValidEmail(in.Email) || len(in.Password) > 1024 || len(in.OrganizationSlug) > 80 || len(in.SecondFactor) > 64 {
 		problem(w, 400, "invalid_login", "Проверьте адрес почты и пароль")
 		return
 	}
@@ -130,7 +131,8 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	// Serialize with password resets: a password verified before a reset must not
 	// create a new session after that reset has revoked the existing sessions.
 	var currentHash, userStatus string
-	err = tx.QueryRow(r.Context(), `SELECT password_hash,status FROM users WHERE id=$1 FOR UPDATE`, p.UserID).Scan(&currentHash, &userStatus)
+	var mfaEnabled bool
+	err = tx.QueryRow(r.Context(), `SELECT password_hash,status,mfa_enabled FROM users WHERE id=$1 FOR UPDATE`, p.UserID).Scan(&currentHash, &userStatus, &mfaEnabled)
 	if err != nil {
 		a.failure(w, err)
 		return
@@ -151,6 +153,16 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.Role = activeRole
+	if mfaEnabled {
+		if in.SecondFactor == "" {
+			problem(w, 401, "mfa_required", "Введите код приложения или резервный код")
+			return
+		}
+		if err = a.consumeFactor(r.Context(), tx, p.UserID, in.SecondFactor); err != nil {
+			a.accountFailure(w, err)
+			return
+		}
+	}
 	if _, err = tx.Exec(r.Context(), `DELETE FROM auth_sessions WHERE expires_at <= now()`); err != nil {
 		a.failure(w, err)
 		return

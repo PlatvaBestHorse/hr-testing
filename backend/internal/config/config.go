@@ -1,9 +1,14 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
+	"github.com/PlatvaBestHorse/hr-testing/backend/internal/maildelivery"
+	"net"
+	"net/mail"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -13,6 +18,10 @@ type Config struct {
 	DatabaseURL  string
 	SecureCookie bool
 	Origins      []string
+	AuthKey      []byte
+	PublicURL    string
+	MailMode     string
+	MailSender   maildelivery.Sender
 }
 
 func DatabaseURL() (string, error) {
@@ -53,6 +62,53 @@ func Load() (Config, error) {
 			return Config{}, errors.New("secure cookie mode requires HTTPS APP_ORIGINS; local development must explicitly set COOKIE_SECURE=false")
 		}
 		c.Origins = append(c.Origins, origin)
+	}
+	var err error
+	c.AuthKey, err = hex.DecodeString(os.Getenv("AUTH_ENCRYPTION_KEY"))
+	if err != nil || len(c.AuthKey) != 32 {
+		return Config{}, errors.New("AUTH_ENCRYPTION_KEY must be a preserved 32-byte hex key")
+	}
+	c.PublicURL = os.Getenv("APP_PUBLIC_URL")
+	if c.PublicURL == "" {
+		c.PublicURL = c.Origins[0]
+	}
+	u, err := url.Parse(c.PublicURL)
+	if err != nil || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return Config{}, errors.New("invalid APP_PUBLIC_URL")
+	}
+	loopback := u.Hostname() == "localhost"
+	if ip := net.ParseIP(u.Hostname()); ip != nil {
+		loopback = ip.IsLoopback()
+	}
+	if (c.SecureCookie || !loopback) && u.Scheme != "https" {
+		return Config{}, errors.New("APP_PUBLIC_URL requires HTTPS outside local development")
+	}
+	c.MailMode = os.Getenv("AUTH_MAIL_MODE")
+	if c.MailMode == "" {
+		c.MailMode = "disabled"
+	}
+	if c.MailMode != "disabled" && c.MailMode != "file" && c.MailMode != "smtp" {
+		return Config{}, errors.New("invalid AUTH_MAIL_MODE")
+	}
+	if c.MailMode == "file" && (c.SecureCookie || !loopback) {
+		return Config{}, errors.New("file mail is for local HTTP development only")
+	}
+	directory := os.Getenv("AUTH_MAIL_DIR")
+	if directory == "" {
+		directory = ".mailbox"
+	}
+	directory, _ = filepath.Abs(directory)
+	c.MailSender = maildelivery.Sender{Mode: c.MailMode, Directory: directory, Address: os.Getenv("SMTP_ADDR"), Username: os.Getenv("SMTP_USERNAME"), Password: os.Getenv("SMTP_PASSWORD"), From: os.Getenv("SMTP_FROM")}
+	if c.MailMode == "smtp" {
+		_, port, e := net.SplitHostPort(c.MailSender.Address)
+		n, pe := strconv.Atoi(port)
+		_, fe := mail.ParseAddress(c.MailSender.From)
+		if e != nil || pe != nil || n < 1 || n > 65535 || fe != nil {
+			return Config{}, errors.New("SMTP_ADDR and SMTP_FROM are required")
+		}
+		if (c.MailSender.Username == "") != (c.MailSender.Password == "") {
+			return Config{}, errors.New("incomplete SMTP credentials")
+		}
 	}
 	return c, nil
 }

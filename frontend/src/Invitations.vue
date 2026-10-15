@@ -30,6 +30,7 @@ async function revoke(i: Invitation) {
   busy.value = true; error.value = ''; try { await api('/invitations/' + i.id + '/revoke', { method: 'POST' }); if (i.id === newInvitationID.value) newLink.value = ''; notice.value = 'Приглашение отозвано'; await load() } catch (err) { error.value = (err as Error).message } finally { busy.value = false }
 }
 async function init() {
+  try { const settings = await api<{ invitation_default_days: number }>('/organization'); form.expires_at = dateInput(new Date(Date.now() + settings.invitation_default_days * 24 * 60 * 60 * 1000)) } catch (err) { error.value = (err as Error).message }
   await Promise.all([load(), searchCandidates(), searchTests(), searchVacancies()])
   if (route.query.candidate_id) { try { const c = await api<Candidate>('/candidates/' + route.query.candidate_id); if (!candidates.value.some(v => v.id === c.id)) candidates.value.unshift(c); form.candidate_id = c.id } catch (err) { error.value = (err as Error).message } }
   if (route.query.test_id && route.query.test_version_no) { try { const t = await api<TestRecord>('/tests/' + route.query.test_id + '?version_no=' + route.query.test_version_no); if (t.version_status === 'published' && t.status === 'active') { if (!tests.value.some(v => v.version_id === t.version_id)) tests.value.unshift(t); form.test_version_id = t.version_id } } catch (err) { error.value = (err as Error).message } }

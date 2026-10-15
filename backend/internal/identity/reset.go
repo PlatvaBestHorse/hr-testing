@@ -26,6 +26,12 @@ func ResetPassword(ctx context.Context, pool *pgxpool.Pool, email, password stri
 	if _, err = tx.Exec(ctx, `DELETE FROM auth_sessions WHERE user_id=$1`, id); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(ctx, `DELETE FROM account_tokens WHERE user_id=$1`, id); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE user_security SET pending_ciphertext=NULL,pending_until=NULL WHERE user_id=$1`, id); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_events(organization_id,action,object_type,object_id) SELECT organization_id,'auth.password.reset_cli','user',user_id FROM memberships WHERE user_id=$1`, id); err != nil {
 		return err
 	}
