@@ -6,7 +6,14 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -o /out/api ./cmd/api && CGO_ENABLED=0 go build -trimpath -o /out/migrate ./cmd/migrate && \
     CGO_ENABLED=0 go build -trimpath -o /operator/bootstrap ./cmd/bootstrap && \
     CGO_ENABLED=0 go build -trimpath -o /operator/set-password ./cmd/set-password && \
-    CGO_ENABLED=0 go build -trimpath -o /operator/org-resume ./cmd/org-resume
+    CGO_ENABLED=0 go build -trimpath -o /operator/org-resume ./cmd/org-resume && \
+    CGO_ENABLED=0 go build -trimpath -o /backup/backup ./cmd/backup
+
+# Use the same major PostgreSQL client as the private production database.
+# No Go toolchain or Docker socket is needed by backup/restore operations.
+FROM postgres:17-bookworm AS backup
+COPY --from=build /backup/backup /app/backup
+ENTRYPOINT ["/app/backup"]
 
 FROM alpine:3.23 AS base
 WORKDIR /app

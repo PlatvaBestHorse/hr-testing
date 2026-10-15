@@ -43,6 +43,7 @@ type operator struct {
 	ledgerPath         string
 	key                []byte
 	cfg                *pgx.ConnConfig
+	direct             bool
 }
 
 func main() {
@@ -67,7 +68,10 @@ func run() error {
 	if err := flags.Parse(os.Args[2:]); err != nil || flags.NArg() != 0 {
 		return errors.New("invalid backup arguments")
 	}
-	o := operator{root: os.Getenv("HR_PROJECT_ROOT")}
+	o := operator{root: os.Getenv("HR_PROJECT_ROOT"), direct: os.Getenv("HR_BACKUP_TRANSPORT") == "postgres"}
+	if transport := os.Getenv("HR_BACKUP_TRANSPORT"); transport != "" && transport != "docker" && transport != "postgres" {
+		return errors.New("unknown backup transport")
+	}
 	if o.root == "" {
 		return errors.New("use scripts/run_backend.py backup from the project")
 	}
@@ -100,9 +104,10 @@ func run() error {
 	if err != nil {
 		return errors.New("invalid database configuration")
 	}
-	// Docker's PG socket authentication is scoped to this local Compose DB.
-	if o.cfg.Host != "127.0.0.1" && o.cfg.Host != "localhost" {
-		return errors.New("backup CLI supports the local Compose database only")
+	// The direct transport is only for the dedicated production Compose tool:
+	// PostgreSQL remains private, with no host port or Docker socket in this tool.
+	if (!o.direct && o.cfg.Host != "127.0.0.1" && o.cfg.Host != "localhost") || (o.direct && o.cfg.Host != "db") {
+		return errors.New("backup requires the selected private Compose database")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
@@ -217,6 +222,19 @@ func (o *operator) files() ([]string, error) {
 }
 
 func (o *operator) pg(ctx context.Context, tool, db string, args ...string) *exec.Cmd {
+	if o.direct {
+		c := exec.CommandContext(ctx, tool, append([]string{"--host", o.cfg.Host, "--port", fmt.Sprint(o.cfg.Port), "--username", o.cfg.User, "--dbname", db, "--no-password"}, args...)...)
+		// Keep credentials out of argv/logs. Match pgx's explicit private-network
+		// connection rather than inheriting unrelated libpq service settings.
+		for _, entry := range os.Environ() {
+			if !strings.HasPrefix(entry, "PG") {
+				c.Env = append(c.Env, entry)
+			}
+		}
+		c.Env = append(c.Env, "PGPASSWORD="+o.cfg.Password, "PGSSLMODE=disable", "PGCONNECT_TIMEOUT=10")
+		c.Stderr = io.Discard
+		return c
+	}
 	a := []string{"compose", "exec", "-T", "db", tool, "--username", o.cfg.User, "--dbname", db}
 	a = append(a, args...)
 	c := exec.CommandContext(ctx, "docker", a...)

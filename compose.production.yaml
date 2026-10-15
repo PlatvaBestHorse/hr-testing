@@ -84,6 +84,24 @@ services:
     environment:
       DATABASE_URL: postgres://hr_owner:${POSTGRES_PASSWORD}@db:5432/hr_testing?sslmode=disable
 
+  backup:
+    <<: *locked
+    profiles: [tools]
+    image: ${HR_IMAGE_PREFIX}-backup:${HR_RELEASE_TAG}
+    build:
+      context: ./backend
+      target: backup
+    environment:
+      DATABASE_URL: postgres://hr_owner:${POSTGRES_PASSWORD}@db:5432/hr_testing?sslmode=disable
+      HR_PROJECT_ROOT: /backupstate
+      HR_BACKUP_TRANSPORT: postgres
+    volumes:
+      - type: bind
+        source: ${HR_STATE_DIR}/backup
+        target: /backupstate
+        bind:
+          create_host_path: false
+
   web:
     logging: *logging
     image: ${HR_IMAGE_PREFIX}-web:${HR_RELEASE_TAG}

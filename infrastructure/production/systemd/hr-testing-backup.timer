@@ -1,0 +1,11 @@
+[Unit]
+Description=HR Testing daily verified encrypted backup
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+Unit=hr-testing-ops@backup.service
+
+[Install]
+WantedBy=timers.target

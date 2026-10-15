@@ -1,0 +1,10 @@
+[Unit]
+Description=HR Testing health and backup freshness every two minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/2:00 UTC
+Persistent=true
+Unit=hr-testing-ops@check.service
+
+[Install]
+WantedBy=timers.target

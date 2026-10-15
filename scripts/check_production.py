@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 
 import production as p
+import operations as operations
 
 
 def run(*args):
@@ -52,7 +53,7 @@ def main():
         p.initialize(args)
         config = p.load(args.config)
         p.compose(config, 'config', '--quiet')
-        p.compose(config, 'build', 'api', 'web', 'admin')
+        p.compose(config, 'build', 'api', 'web', 'admin', 'backup')
         p.start(config)
         credentials = {'organization_name': 'Synthetic production rehearsal', 'display_name': 'Synthetic admin',
                        'email': 'admin@production.test', 'password': secrets.token_urlsafe(24)}
@@ -138,7 +139,32 @@ def main():
         role = p.compose(config, 'exec', '-T', 'db', 'psql', '-U', 'hr_owner', '-d', 'hr_testing', '-Atc',
                          "SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname='hr_app'", capture=True)
         assert role.stdout.strip() == 'f'
-        print('PASS: verified HTTPS, Secure session, bootstrap/password/resume operators, CSRF, private ports and data/session persistence after full restart.')
+        # Production backup image uses native PG17 clients with no Docker socket
+        # and restores into fresh DBs, preserving the live API/session unchanged.
+        replica = root / 'replica'
+        replica.mkdir(mode=0o700)
+        ops_args = argparse.Namespace(ops=str(root / 'operations.json'), replica_dir=str(replica), rehearsal=True, alert_program=None)
+        operations.configure(config, ops_args)
+        settings = operations.load(config, ops_args.ops)
+        operations.scheduled(config, settings, 'backup')
+        saved = operations.receipt(config)
+        assert saved['backup']['artifact']['size'] > 0 and saved['ledger']['artifact']['size'] > 0
+        assert not (replica / '.env.backup.key').exists()
+        assert (root / 'state/backup/.env.backup.key').stat().st_mode & 0o777 == 0o600
+        p.backup(config, 'verify')
+        archive = '/backupstate/.backups/' + saved['backup']['artifact']['name']
+        ledger = '/backupstate/.backups/' + saved['ledger']['artifact']['name']
+        p.backup(config, 'restore', '--file', archive, '--ledger', ledger,
+                 '--target', 'hr_recovery_production_smoke', '--confirm', 'CURRENT_ERASURE_LEDGER')
+        assert request('GET', '/api/v1/me')['role'] == 'org_admin'
+        issues = operations.health(config, settings)
+        assert set(issues) == {'rehearsal_replica_not_independent', 'tls_invalid_or_expires_within_7_days'}, 'Unexpected operations health issues: ' + repr(issues)
+        p.compose(config, 'stop', 'api')
+        issues = operations.health(config, settings)
+        assert 'api_unhealthy' in issues and 'api_readiness_failed' in issues
+        p.compose(config, 'up', '-d', '--no-deps', '--wait', 'api')
+        assert request('GET', '/api/v1/me')['role'] == 'org_admin'
+        print('PASS: HTTPS/auth/operators/persistence, encrypted production backup+verified restore+replica, unchanged live session and stopped-API detection.')
     finally:
         if config:
             stopped = p.compose(config, 'down', '--remove-orphans', check=False)

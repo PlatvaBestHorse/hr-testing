@@ -13,6 +13,8 @@ services:
     build: *cloud-build
   admin:
     build: *cloud-build
+  backup:
+    build: *cloud-build
   web:
     build: *cloud-build
 secrets:

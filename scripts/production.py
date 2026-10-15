@@ -126,17 +126,21 @@ def load(path, tls=True):
     if identity != {'secret_fingerprint': fingerprint(config), 'project': config['HR_PROJECT']}:
         raise ValueError('Database/key identity mismatch. Restore the original configuration.')
     if tls:
-        private_file(Path(config['HR_TLS_KEY']))
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(config['HR_TLS_CERT'], config['HR_TLS_KEY'], password=lambda: '')
-        for options in (['-checkhost', config['HR_PUBLIC_HOST']], ['-checkend', '86400']):
-            result = subprocess.run(['openssl', 'x509', '-in', config['HR_TLS_CERT'], '-noout', *options], capture_output=True)
-            if result.returncode:
-                raise ValueError('TLS certificate must match the hostname and remain valid for at least 24 hours.')
+        load_tls_certificate(config)
     return config
 
 
-def compose(config, *args, input_data=None, capture=False, check=True):
+def load_tls_certificate(config, minimum_seconds=86400):
+    private_file(Path(config['HR_TLS_KEY']))
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(config['HR_TLS_CERT'], config['HR_TLS_KEY'], password=lambda: '')
+    for options in (['-checkhost', config['HR_PUBLIC_HOST']], ['-checkend', str(minimum_seconds)]):
+        result = subprocess.run(['openssl', 'x509', '-in', config['HR_TLS_CERT'], '-noout', *options], capture_output=True)
+        if result.returncode:
+            raise ValueError('TLS certificate must match the hostname and meet the remaining validity threshold.')
+
+
+def compose(config, *args, input_data=None, capture=False, check=True, timeout=2400):
     env = os.environ.copy()
     # Host/development .env and COMPOSE_FILE must never select a different DB.
     for key in list(env):
@@ -147,7 +151,7 @@ def compose(config, *args, input_data=None, capture=False, check=True):
     if env.get('HR_BUILD_PROXY_IP'):
         command += ['-f', str(ROOT / 'compose.production.cloud.yaml')]
     result = subprocess.run([*command, *args], env=env, cwd=ROOT, input=input_data,
-                            text=True, capture_output=True)
+                            text=True, capture_output=True, timeout=timeout)
     # Never stream Compose errors: interpolation failures can include credentials.
     if not capture or (check and result.returncode):
         output = result.stdout + result.stderr
@@ -168,6 +172,18 @@ def start(config):
     compose(config, 'up', '-d', '--no-deps', '--force-recreate', '--wait', 'web')
 
 
+def backup(config, *args):
+    """Reuse the verified encrypted format; never expose the DB on the host."""
+    directory = Path(config['HR_STATE_DIR']) / 'backup'
+    if directory.is_symlink():
+        raise ValueError('Backup directory must not be a symlink.')
+    directory.mkdir(mode=0o700, exist_ok=True)
+    if stat.S_IMODE(directory.stat().st_mode) & 0o077:
+        raise ValueError('Backup directory must be private (0700).')
+    return compose(config, 'run', '--rm', '--no-deps', '-T', '--user',
+                   str(os.getuid()) + ':' + str(os.getgid()), 'backup', *args)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True, help='Private absolute JSON path outside the checkout')
@@ -185,11 +201,13 @@ def main():
         commands.add_parser(name)
     release = commands.add_parser('set-release')
     release.add_argument('--release', required=True)
+    backup_args = commands.add_parser('backup', help='Encrypted production backup operator')
+    backup_args.add_argument('arguments', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.command == 'init':
         initialize(args)
         return
-    config = load(args.config, tls=args.command not in ('status', 'down'))
+    config = load(args.config, tls=args.command not in ('status', 'down', 'backup'))
     if args.command == 'set-release':
         config['HR_RELEASE_TAG'] = args.release
         validate(config)
@@ -202,7 +220,11 @@ def main():
         compose(config, 'config', '--quiet')
         print('Configuration, key identity and certificate checked offline. Public TLS chain/DNS are not checked.')
     elif args.command == 'build':
-        compose(config, 'build', 'api', 'web', 'admin')
+        compose(config, 'build', 'api', 'web', 'admin', 'backup')
+    elif args.command == 'backup':
+        if not args.arguments:
+            raise ValueError('Specify create, verify, erasures, list, prune or restore.')
+        backup(config, *args.arguments)
     elif args.command == 'up':
         start(config)
     elif args.command == 'status':
@@ -231,7 +253,7 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, OSError, RuntimeError) as error:
+    except (ValueError, OSError, RuntimeError, subprocess.TimeoutExpired) as error:
         # Avoid underlying exception text containing malformed private config.
         if isinstance(error, ValueError) and not isinstance(error, json.JSONDecodeError):
             print(str(error), file=sys.stderr)

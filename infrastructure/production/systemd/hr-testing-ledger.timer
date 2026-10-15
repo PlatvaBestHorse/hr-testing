@@ -1,0 +1,10 @@
+[Unit]
+Description=HR Testing encrypted erasure journal every five minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/5:00 UTC
+Persistent=true
+Unit=hr-testing-ops@ledger.service
+
+[Install]
+WantedBy=timers.target

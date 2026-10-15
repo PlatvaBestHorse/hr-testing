@@ -1,0 +1,23 @@
+[Unit]
+Description=HR Testing operations (%i)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hr-testing
+SupplementaryGroups=docker
+WorkingDirectory=/opt/hr-testing
+Environment=DOCKER_CONFIG=/etc/hr-testing/docker
+Environment=DOCKER_HOST=unix:///var/run/docker.sock
+ExecStart=/usr/bin/python3 /opt/hr-testing/scripts/operations.py --config /etc/hr-testing/production.json --ops /etc/hr-testing/operations.json %i
+UMask=0077
+TimeoutStartSec=40min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hr-testing /srv/hr-testing-replica
+StandardOutput=journal
+StandardError=journal

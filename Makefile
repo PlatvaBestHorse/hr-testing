@@ -32,7 +32,7 @@ admin-docker:
 	python3 scripts/create_admin.py --docker
 
 production-test:
-	python3 -m unittest discover -s scripts/tests -p 'test_production.py'
+	python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
 production-smoke:
 	python3 scripts/check_production.py

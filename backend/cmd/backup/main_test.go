@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,24 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func TestProductionPostgresTransportDoesNotExposeCredentials(t *testing.T) {
+	cfg, err := pgx.ParseConfig("postgres://hr_owner:private-password@db:5432/hr_testing?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PGSERVICE", "unrelated-service")
+	t.Setenv("PGSSLMODE", "verify-full")
+	o := operator{direct: true, cfg: cfg}
+	c := o.pg(context.Background(), "pg_dump", "hr_testing", "--format=custom")
+	if strings.Contains(strings.Join(c.Args, " "), cfg.Password) || c.Args[0] != "pg_dump" {
+		t.Fatal("credentials in argv or wrong production tool")
+	}
+	env := strings.Join(c.Env, "\n")
+	if !strings.Contains(env, "PGPASSWORD=private-password") || !strings.Contains(env, "PGSSLMODE=disable") || strings.Contains(env, "PGSERVICE=") {
+		t.Fatal("production libpq configuration differs from explicit pgx configuration")
+	}
+}
 
 func fixtureOperator(t *testing.T) *operator {
 	t.Helper()
